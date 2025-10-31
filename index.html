@@ -81,7 +81,7 @@ async function tick(force=false){
   let diag = "Mode: même origine (GitHub Pages)\n";
   if (ms !== null){
     const delta = Date.now() - ms;            // ms
-    const dSec  = Math.round(delta/1000);
+    const dSec  = Math.round(delta/1);
     diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
     if (delta >= STALE_MS){
       img.src = ERR_IMG;
