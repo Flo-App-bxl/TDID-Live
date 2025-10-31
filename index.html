@@ -63,12 +63,27 @@ setActive();
 
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
+/* --- Normalisation d'epoch (ms) ---
+   - si secondes -> *1000
+   - si epoch "local" (Excel/VBA) -> UTC = local - offset */
+function normalizeEpoch(raw){
+  let ms = Number(String(raw).trim());
+  if (!Number.isFinite(ms)) return null;
+  if (ms < 1e12) ms *= 1000; // secondes -> ms
+  const now = Date.now();
+  if (ms - now > 10 * 60 * 1000) { // semble dans le futur => probable epoch local
+    const offsetMin = new Date().getTimezoneOffset(); // minutes à ajouter au local pour obtenir UTC
+    ms = ms - offsetMin * 60000; // UTC = local - offset
+  }
+  return ms;
+}
+
 async function readAge(url){
   try{
     const r = await fetch(cb(url), {cache:'no-store'});
     if(!r.ok) return {ms:null, why:'HTTP '+r.status};
     const raw = (await r.text()).trim();
-    const ms  = parseInt(raw,10);
+    const ms  = normalizeEpoch(raw);
     if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
     return {ms, why:null};
   }catch(e){ return {ms:null, why:'fetch'}; }
@@ -91,7 +106,7 @@ async function tick(force=false){
   if (ms !== null){
     const delta = Date.now() - ms; // ms
     const dSec  = Math.round(delta/1000);
-    diag += `age.txt OK • Δ=${dSec}sec → ${dSec>=120 ? 'STALE' : 'OK'}`;
+    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
     if (delta >= STALE_MS){
       img.src = ERR_IMG;
       stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
