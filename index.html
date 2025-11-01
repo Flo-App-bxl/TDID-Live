@@ -31,7 +31,7 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ====== CONFIG SP (ton code d’origine) ====== */
+/* ====== CONFIG SP ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 function spRaw(file){
@@ -73,12 +73,10 @@ const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
 function setStampSource(srcLabel){
   lastSource = srcLabel;
-  // Ajouter la source à côté de l’horodatage
   const nowTxt = new Date().toLocaleString();
   stamp.textContent = `${srcLabel} • ${nowTxt}`;
 }
 
-/* Parse robuste d’epoch (BOM/parasites → chiffres) */
 function normalizeEpoch(raw){
   if (raw == null) return null;
   let s = String(raw).replace(/^\uFEFF/, '').trim();
@@ -86,9 +84,9 @@ function normalizeEpoch(raw){
   if (!s) return null;
   let ms = Number(s);
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;                 // secondes -> ms
+  if (ms < 1e12) ms *= 1000;
   const now = Date.now();
-  if (ms - now > 10*60*1000){                // futur improbable => corrige TZ locale
+  if (ms - now > 10*60*1000){
     const offsetMin = new Date().getTimezoneOffset();
     ms = ms - offsetMin*60000;
   }
@@ -145,16 +143,15 @@ async function tick(force=false){
   const {img:imgUrl, age:ageUrl} = DATA_SP[depot];
   let diag = `Dépôt: ${depot}\n`;
 
-  // 1) SP prioritaire
   const a = await readAgeSP(ageUrl);
   if (a.ms !== null){
+    // Cas normal : age.txt présent et valide
     const delta = Date.now() - a.ms;
     const dSec  = Math.round(delta/1000);
     const stale = delta >= STALE_MS;
     diag += `SP age OK • Δ=${dSec}s → ${stale ? 'STALE' : 'OK'}`;
 
     if (stale){
-      // Règle : si SP accessible mais > 5 min → ERREUR (pas de miroir)
       if (lastBlobUrl){ URL.revokeObjectURL(lastBlobUrl); lastBlobUrl=null; }
       img.src = ERR_IMG_SP;
       setStampSource("Erreur (SP)");
@@ -162,19 +159,23 @@ async function tick(force=false){
       return;
     }
 
-    // image SP récente → on tente l’affichage direct
+    // Image SP récente
     const ok = await showImageSP(imgUrl);
-    if (ok){
-      note.textContent = diag + "\nSP image OK • source: SP";
+    if (ok){ note.textContent = diag + "\nSP image OK • source: SP"; return; }
+    else   { diag += "\nSP image KO → tentative miroir"; }
+  } else {
+    // age.txt absent ou illisible : on tente l’image SP quand même
+    diag += `SP age indisponible (${a.why}) → tentative image directe`;
+    const okImg = await showImageSP(imgUrl);
+    if (okImg){
+      note.textContent = diag + "\n→ SP image OK (sans age.txt) • source: SP";
       return;
     } else {
-      diag += "\nSP image KO → on tente le miroir";
+      diag += "\nSP image KO → fallback miroir";
     }
-  } else {
-    diag += `SP age indisponible (${a.why}) → on tente le miroir`;
   }
 
-  // 2) Fallback miroir (seulement si SP inaccessible/KO)
+  // --- Miroir ---
   const m = await loadMirrorLatest();
   if (!m || !m.items){
     note.textContent = diag + "\nmiroir indisponible";
@@ -183,7 +184,7 @@ async function tick(force=false){
     return;
   }
 
-  const key  = MIRROR_KEY[depot];      // "brel" | "delta" | "eras"
+  const key  = MIRROR_KEY[depot];
   const item = m.items?.[key];
   if (!item || !item.url){
     note.textContent = diag + `\nmiroir: entrée manquante (${key})`;
