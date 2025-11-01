@@ -6,7 +6,6 @@
 <title>TDID Live – Brel / Delta / Erasm.</title>
 <style>
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff}
-  *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   body{padding-top:64px}
   .top{position:fixed;top:0;left:0;right:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
@@ -32,105 +31,90 @@
   <div class="note" id="note"></div>
 
 <script>
-const ROOT = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
-const DEPOTS = ["brel","delta","erasme"];
-const ERR_IMG = ROOT + "TDID_Erreur.png";
-const REFRESH_MS = 3000, STALE_MS = 120000;
+/* === SOURCES ONEDRIVE (avec download=1) === */
+const DATA = {
+  brel: {
+    age: "https://stibmivb-my.sharepoint.com/:t:/g/personal/florent_legrain_stib_brussels/ESQ221wQDP9PhsEViRwWOKABDoA7Vdy2ZaZMsaIOJzvZ2w?download=1",
+    img: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?download=1"
+  },
+  delta: {
+    age: "https://stibmivb-my.sharepoint.com/:t:/g/personal/florent_legrain_stib_brussels/EaSQDh9-RD9DimpKm0KyBecBYwV2eZ7JEiTToHWZD5l9FA?download=1",
+    img: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?download=1"
+  },
+  erasme: {
+    age: "https://stibmivb-my.sharepoint.com/:t:/g/personal/florent_legrain_stib_brussels/EZLW6urioyBOlh2YVod8wIMB2g9bYznK9ofcYRZdm802zw?download=1",
+    img: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQKsOLvrFUtMm3OAxC41BZQBoEg69j0smCZ_xSRq3ZsqVQ?download=1"
+  }
+};
+const ERR_IMG = "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EVlkXRiU6mRMuYfkn0Z2JwkBJ1SWQbK0ytMxOHvKQv8LRA?download=1";
+
+const REFRESH_MS = 3000;      // 3 s
+const STALE_MS   = 120000;    // 2 min
 
 const img   = document.getElementById('view');
-const note  = document.getElementById('note');
 const stamp = document.getElementById('stamp');
+const note  = document.getElementById('note');
+
+const btns = {
+  brel:   document.getElementById('brel'),
+  delta:  document.getElementById('delta'),
+  erasme: document.getElementById('erasme')
+};
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
-for (const d of DEPOTS){
-  const el = document.getElementById(d);
-  el.onclick = ()=>{ depot=d; localStorage.setItem('tdid_depot',depot); setActive(); tick(true); };
-}
-function setActive(){ for (const d of DEPOTS) document.getElementById(d).classList.toggle('active', d===depot); }
+function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
+for(const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot',depot); setActive(); tick(true); }; }
 setActive();
 
-async function fetchNoCache(u){ return fetch(u+"?t="+Date.now(),{cache:"no-store"}); }
-async function fetchJSON(u){ const r=await fetchNoCache(u); if(!r.ok) throw new Error("HTTP "+r.status); return {json: await r.json(), date:r.headers.get('Date')}; }
-async function fetchTEXT(u){ const r=await fetchNoCache(u); if(!r.ok) throw new Error("HTTP "+r.status); return {text: await r.text(), date:r.headers.get('Date')}; }
-async function fetchBLOBURL(u){ const r=await fetchNoCache(u); if(!r.ok) throw new Error("HTTP "+r.status); return URL.createObjectURL(await r.blob()); }
+async function fetchNoStore(u){ return fetch(u + (u.includes('?')?'&':'?') + 't=' + Date.now(), {cache:'no-store'}); }
+async function fetchText(u){ const r = await fetchNoStore(u); if(!r.ok) throw new Error('HTTP '+r.status); return {text:await r.text(), date:r.headers.get('Date')}; }
+async function fetchBlobUrl(u){ const r = await fetchNoStore(u); if(!r.ok) throw new Error('HTTP '+r.status); const b=await r.blob(); return URL.createObjectURL(b); }
 
 function tzOffsetMs(){ return new Date().getTimezoneOffset()*60000; }
-
-/* Normalise un epoch :
-   - Si déjà en ms UTC → renvoie tel quel.
-   - Si "dans le futur" mais |delta| < 12h → suppose epoch local et convertit en UTC (= age - offset) */
-function normalizeEpoch(msRaw, nowRef){
-  let ms = Number(msRaw);
+function normalizeEpoch(raw, nowRef){
+  let ms = Number(String(raw).trim());
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000; // secondes → ms
-
-  const delta = ms - nowRef;  // >0 = futur
-  if (delta > 0 && delta < 12*3600*1000){
-    // Probable "heure locale" encodée comme UTC
-    ms = ms - tzOffsetMs();
+  if (ms < 1e12) ms *= 1000; // sec -> ms
+  const delta = ms - nowRef;
+  if (delta > 0 && delta < 12*3600*1000){ // probable "heure locale"
+    ms = ms - tzOffsetMs();               // -> UTC
   }
   return ms;
 }
 
 async function tick(force=false){
-  setActive();
+  const src = DATA[depot];
   let diag = `Depot: ${depot}\n`;
-
-  // 1) MANIFEST
   try{
-    const {json:man, date} = await fetchJSON(ROOT + `live_${depot}.json`);
+    // 1) âge depuis OneDrive
+    const {text:ageTxt, date} = await fetchText(src.age);
     const serverNow = date ? new Date(date).getTime() : Date.now();
-    const age = normalizeEpoch(man.age, serverNow);
-    if (age===null) throw new Error("age invalide");
+    const age = normalizeEpoch(ageTxt, serverNow);
+    if (age===null) throw new Error('age invalide');
 
     const dSec = Math.round((serverNow - age)/1000);
-    diag += `age(manifest) • Δ=${dSec>=0?"+":""}${dSec}s → ${dSec>=120?"STALE":"OK"}`;
+    diag += `age.txt OK • Δ=${dSec>=0?'+':''}${dSec}s → ${dSec>=120?'STALE':'OK'}`;
     if (dSec*1000 >= STALE_MS){
       img.src = ERR_IMG;
       stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
       note.textContent = diag + "\n→ Affichage Erreur";
       return;
     }
-    // image versionnée => pas de cache
-    const blobUrl = await fetchBLOBURL(ROOT + String(man.png||""));
+
+    // 2) image OneDrive (no-store via blob)
+    const blobUrl = await fetchBlobUrl(src.img);
     img.onload  = ()=>{ stamp.textContent = new Date().toLocaleString(); };
     img.onerror = ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
     img.src = blobUrl;
-    note.textContent = diag;
-    return;
   }catch(e){
-    diag += `manifest KO (${e.message}) → fallback legacy`;
-  }
-
-  // 2) LEGACY
-  try{
-    const {text:ageTxt, date} = await fetchTEXT(ROOT + `live_${depot}.age.txt`);
-    const serverNow = date ? new Date(date).getTime() : Date.now();
-    const age = normalizeEpoch(ageTxt.trim(), serverNow);
-    if (age===null) throw new Error("age invalide");
-    const dSec = Math.round((serverNow - age)/1000);
-    diag += `\nage.txt • Δ=${dSec>=0?"+":""}${dSec}s → ${dSec>=120?"STALE":"OK"}`;
-    if (dSec*1000 >= STALE_MS){
-      img.src = ERR_IMG;
-      stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
-      note.textContent = diag + "\n→ Affichage Erreur";
-      return;
-    }
-    const blobUrl = await fetchBLOBURL(ROOT + `live_${depot}.png`);
-    img.onload  = ()=>{ stamp.textContent = new Date().toLocaleString(); };
-    img.onerror = ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
-    img.src = blobUrl;
-    note.textContent = diag;
-  }catch(e2){
-    diag += `\nlegacy KO (${e2.message}) → Erreur`;
+    diag += `age.txt indisponible (${e.message}) • fallback Erreur`;
     img.src = ERR_IMG;
-    note.textContent = diag;
   }
+  note.textContent = diag;
 }
 
 setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
 </script>
-
 </body>
 </html>
