@@ -31,7 +31,7 @@
   <div class="note" id="note"></div>
 
 <script>
-/* === Mode instantané : lecture RAW GitHub === */
+/* === Lecture directe RAW GitHub (instantané) === */
 const RAW = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
 const DATA = {
   brel:   { img: RAW + "live_brel.png",   age: RAW + "live_brel.age.txt"   },
@@ -40,7 +40,7 @@ const DATA = {
 };
 const ERR_IMG    = RAW + "TDID_Erreur.png";
 const REFRESH_MS = 3000;
-const STALE_MS   = 120000;
+const STALE_SEC  = 120; // ⏱ 2 minutes exactes
 
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
@@ -58,38 +58,37 @@ function setActive(){ for (const k in btns) btns[k].classList.toggle('active', k
 for (const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
-// helpers
-const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
-const ver = (base, v) => base + (base.includes('?')?'&':'?') + 'v=' + v + '&t=' + Date.now();
+const bust = () => 't=' + Date.now();
+const ver  = (base, v) => base + (base.includes('?')?'&':'?') + 'v=' + v + '&' + bust();
 
-/* Normalise epoch (ms) et corrige epoch "local" → UTC */
+/* Timestamp → epoch ms ; corrige si epoch "local" (Excel/VBA) */
 function normalizeEpoch(raw){
   let ms = Number(String(raw).trim());
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;
+  if (ms < 1e12) ms *= 1000;              // secondes -> ms
   const nowUtc = Date.now();
-  if (ms - nowUtc > 10*60*1000){                // semble futur ⇒ epoch local
-    const offsetMin = new Date().getTimezoneOffset(); // UTC - local (ex -60/-120)
-    ms = ms + offsetMin*60000;                  // ✅ UTC = local + offset
+  if (ms - nowUtc > 10*60*1000) {         // semble futur => epoch local
+    const offsetMin = new Date().getTimezoneOffset(); // UTC - local (souvent -60 / -120)
+    ms = ms + offsetMin*60000;            // ✅ UTC = local + offset
   }
   return ms;
 }
 
-/* age.txt (no-store) + heure serveur */
+/* Lire age.txt (no-store) + heure serveur (header Date) */
 async function readAge(url){
   try{
-    const r = await fetch(cb(url), {cache:'no-store'});
+    const r = await fetch(url + (url.includes('?')?'&':'?') + bust(), {cache:'no-store'});
     if (!r.ok) return {ms:null, why:'HTTP '+r.status, serverNow:null};
-    const srv = r.headers.get('Date'); const serverNow = srv ? new Date(srv).getTime() : null;
+    const serverNow = r.headers.get('Date') ? new Date(r.headers.get('Date')).getTime() : null;
     const ms = normalizeEpoch((await r.text()).trim());
     return {ms, why:null, serverNow};
   }catch{ return {ms:null, why:'fetch', serverNow:null}; }
 }
 
-/* Image via blob pour contourner tous caches */
-async function loadImageNoStore(src){
+/* Charger une image en blob (anti-cache CDN) */
+async function loadImageNoStore(srcWithVersion){
   try{
-    const r = await fetch(src, {cache:'no-store'}); // src contient déjà v=age&t=now
+    const r = await fetch(srcWithVersion, {cache:'no-store'});
     if (!r.ok) throw new Error('HTTP '+r.status);
     const blob = await r.blob();
     if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
@@ -102,17 +101,17 @@ async function tick(force=false){
   const {img:imgBase, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) lire age
+  // 1) Lire l'âge
   const info = await readAge(ageUrl);
   if (info.ms !== null){
     const nowRef = info.serverNow ?? Date.now();
-    let delta = nowRef - info.ms;
-    if (Math.abs(delta) > 86400000) delta = Date.now() - info.ms; // garde-fou
-    const dSec = Math.round(delta/1000);
-    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
+    let dSec = Math.round((nowRef - info.ms)/1000);
+    if (Math.abs(dSec) > 86400) dSec = Math.round((Date.now()-info.ms)/1000); // garde-fou 24h
 
-    // 1a) si trop vieux → écran erreur
-    if (delta >= STALE_MS){
+    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=STALE_SEC ? 'STALE' : 'OK'}`;
+
+    // 1a) trop vieux → écran erreur immédiat (à 120 s)
+    if (dSec >= STALE_SEC){
       if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
       img.src = ERR_IMG;
       stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
@@ -120,30 +119,24 @@ async function tick(force=false){
       return;
     }
 
-    // 1b) si age a changé → recharger l'image avec v=age (versionnement dur)
+    // 1b) l'âge a changé → on charge l'image versionnée par cet age
     const ageChanged = info.ms !== lastAgeSeen[depot];
-    const imgUrl = ver(imgBase, info.ms); // <-- URL unique par age
+    const imgUrlV = ver(imgBase, info.ms); // 👈 URL unique par âge (= anti-cache dur)
     if (force || ageChanged){
-      const blobUrl = await loadImageNoStore(imgUrl);
+      const blobUrl = await loadImageNoStore(imgUrlV);
       if (blobUrl){
         img.onload = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); };
         img.onerror= ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
         lastBlobUrl = blobUrl; img.src = blobUrl; lastAgeSeen[depot] = info.ms;
-      }else if (!force && lastOk>0 && (Date.now()-lastOk)>=STALE_MS){
+      }else if (!force && lastOk>0 && (Math.round((Date.now()-lastOk)/1000) >= STALE_SEC)){
         if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
         img.src = ERR_IMG; diag += "\nimage KO → Erreur";
-      }
-    } else {
-      // age identique → rafraîchit légèrement l'image pour garder vivant
-      if (Date.now()-lastOk > 30*1000){ // toutes les 30s max
-        const blobUrl = await loadImageNoStore(imgUrl);
-        if (blobUrl){ lastBlobUrl = blobUrl; img.src = blobUrl; lastOk = Date.now(); }
       }
     }
   } else {
     diag += `age.txt indisponible (${info.why}) • fallback sur image`;
-    // fallback : tente quand même l'image avec cache-buster simple
-    const blobUrl = await loadImageNoStore(cb(imgBase));
+    // fallback image avec cache-buster simple
+    const blobUrl = await loadImageNoStore(DATA[depot].img + '?'+bust());
     if (blobUrl){ lastBlobUrl = blobUrl; img.src = blobUrl; lastOk = Date.now(); }
   }
 
