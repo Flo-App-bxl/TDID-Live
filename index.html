@@ -31,140 +31,102 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ====== SP (ta base) ====== */
+/* ====== SharePoint (âge + source prioritaire) ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
-function spRaw(file){
-  const src = `${SP_FOLDER}/${file}`;
-  return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}`;
-}
-const DATA_SP = {
-  brel:   { img: spRaw("live_brel.png")   },
-  delta:  { img: spRaw("live_delta.png")  },
-  erasme: { img: spRaw("live_erasme.png") }
+const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
+
+/* ====== Miroir GitHub Pages (stables) ====== */
+const MIRROR_BASE = "https://flo-app-bxl.github.io/TDID-Live/mirror";
+const mirrorUrl = f => `${MIRROR_BASE}/${f}`;
+
+/* Dépôts */
+const DATA = {
+  brel:   { spImg: spRaw("live_brel.png"),   spAge: spRaw("live_brel.age.txt"),   mirror: mirrorUrl("brel.png")   },
+  delta:  { spImg: spRaw("live_delta.png"),  spAge: spRaw("live_delta.age.txt"),  mirror: mirrorUrl("delta.png")  },
+  erasme: { spImg: spRaw("live_erasme.png"), spAge: spRaw("live_erasme.age.txt"), mirror: mirrorUrl("erasme.png") }
 };
 const ERR_IMG_SP = spRaw("TDID_Erreur.png");
 
-/* ====== Miroir via Pages (PAS d’API) ====== */
-const OWNER   = "Flo-App-bxl";
-const REPO    = "TDID-Live";
-const MIRBASE = `https://${OWNER}.github.io/${REPO}/mirror`;
-const LATEST_TXT = `${MIRBASE}/latest.txt`;   // fichier texte public
-
 const REFRESH_MS = 3000;
-const STALE_MS   = 5*60*1000; // 5 min
+const STALE_MS   = 5 * 60 * 1000; // 5 min
 
-/* UI */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-const btns  = { brel: brel, delta: delta, erasme: erasme };
+const btns  = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
-let lastBlobUrl = null;
-
 function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
-for(const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
+for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
-/* Utils */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
-function setStamp(s){ stamp.textContent = `${s} • ${new Date().toLocaleString()}`; }
 
-/* Parse latest.txt  (format lignes clé=valeur) */
-async function readLatest(){
-  const r = await fetch(cb(LATEST_TXT), {cache:'no-store'});
-  if(!r.ok) throw new Error('HTTP '+r.status);
-  const text = await r.text();
-  const map = {};
-  for(const line of text.split(/\r?\n/)){
-    const m = line.match(/^\s*([a-z]+)\s*=\s*(.+?)\s*$/i);
-    if(m) map[m[1].toLowerCase()] = m[2];
+function normalizeEpoch(raw){
+  if (raw == null) return null;
+  let s = String(raw).replace(/^\uFEFF/,'').trim();
+  if (!/^\d+$/.test(s)) s = s.replace(/[^\d]/g,'');
+  if (!s) return null;
+  let ms = Number(s);
+  if (ms < 1e12) ms *= 1000;
+  const now = Date.now();
+  if (ms - now > 10*60*1000){
+    const offsetMin = new Date().getTimezoneOffset();
+    ms = ms - offsetMin*60000;
   }
-  // attendu : brel=..., delta=..., erasme=..., updated=epochSec
-  const make = (name)=> map[name] ? { url: `${MIRBASE}/${map[name]}`, name: map[name] } : null;
-  return {
-    brel:   make('brel'),
-    delta:  make('delta'),
-    erasme: make('erasme'),
-    updated: Number(map.updated||0)*1000
-  };
+  return ms;
 }
 
-/* Âge miroir via nom ISO dans le fichier */
-function msFromIsoName(name){
-  const m = name && name.match(/_(\d{8}T\d{6}Z)\.png$/i);
-  return m ? new Date(m[1]).getTime() : NaN;
+async function readAge(url){
+  try{
+    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
+    if(!r.ok) return {ms:null, why:'HTTP '+r.status};
+    const raw = await r.text();
+    const ms  = normalizeEpoch(raw);
+    if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
+    return {ms, why:null};
+  }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
-/* Affiche SP */
-function showSP(src){
-  return new Promise(res=>{
-    img.onload  = ()=>{ setStamp("SP"); res(true); };
-    img.onerror = ()=>{ setStamp("SP (KO)"); res(false); };
+function show(src, sourceLabel){
+  return new Promise(resolve=>{
+    img.onload  = ()=>{ stamp.textContent = `${sourceLabel} • ${new Date().toLocaleString()}`; resolve(true); };
+    img.onerror = ()=>{ stamp.textContent = `${sourceLabel} KO • ${new Date().toLocaleString()}`; resolve(false); };
     img.src = cb(src);
   });
 }
 
-/* Affiche miroir (blob) */
-async function showMirror(url){
-  try{
-    const r = await fetch(cb(url), {cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const blob = await r.blob();
-    if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-    lastBlobUrl = URL.createObjectURL(blob);
-    return await new Promise(res=>{
-      img.onload  = ()=>{ setStamp("Miroir"); res(true); };
-      img.onerror = ()=>{ setStamp("Miroir (KO)"); res(false); };
-      img.src = lastBlobUrl;
-    });
-  }catch{ return false; }
-}
-
-/* Loop */
 async function tick(force=false){
-  const spUrl = DATA_SP[depot].img;
+  const cfg = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) lit latest.txt (Pages public, pas d’API → pas de 403)
-  let latest;
-  try { latest = await readLatest(); }
-  catch(e){
-    diag += `latest.txt KO (${e.message})\n`;
-    const okSp = await showSP(spUrl);
-    note.textContent = okSp ? diag + "miroir indisponible → SP direct OK" : diag + "miroir indisponible + SP KO → Erreur";
-    if(!okSp){ img.src = ERR_IMG_SP; setStamp("Erreur"); }
-    return;
+  // 1) âge via SP si possible
+  const age = await readAge(cfg.spAge);
+  if (age.ms !== null){
+    const delta = Date.now() - age.ms;
+    const dSec  = Math.round(delta/1000);
+    const stale = delta >= STALE_MS;
+    diag += `age(SP) OK • Δ=${dSec}s → ${stale?'STALE':'OK'}`;
+    if (stale){
+      await show(ERR_IMG_SP, "Erreur (SP en retard ≥5min)");
+      note.textContent = diag + "\n→ Erreur (origine : miroir/sp en retard)";
+      return;
+    }
+  } else {
+    diag += `age(SP) indisponible (${age.why})`;
   }
 
-  const pick = latest[depot]; // {url, name}
-  if(!pick || !pick.name){
-    const okSp = await showSP(spUrl);
-    note.textContent = okSp ? diag + "mirror vide → SP direct OK" : diag + "mirror vide + SP KO → Erreur";
-    if(!okSp){ img.src = ERR_IMG_SP; setStamp("Erreur"); }
-    return;
-  }
+  // 2) image SP d'abord
+  const okSp = await show(cfg.spImg, "SP");
+  if (okSp){ note.textContent = diag + "\nsource: SP"; return; }
 
-  const tMs = msFromIsoName(pick.name);
-  const ageMs = Number.isFinite(tMs) ? (Date.now()-tMs) : (Date.now()-(latest.updated||0));
-  const ageSec = Math.round(ageMs/1000);
-  const stale = ageMs >= STALE_MS;
-  diag += `âge(miroir) • Δ=${ageSec}s → ${stale?'STALE':'OK'}\n`;
+  // 3) fallback miroir stable (avec cache-buster fort)
+  const okMir = await show(cfg.mirror, "Miroir");
+  if (okMir){ note.textContent = diag + "\nsource: Miroir (stable)"; return; }
 
-  if(stale){
-    img.src = ERR_IMG_SP; setStamp("Erreur (miroir en retard)");
-    note.textContent = diag + "→ Erreur (origine : miroir ≥ 5 min)";
-    return;
-  }
-
-  // 2) source : SP prioritaire sinon miroir
-  const okSp = await showSP(spUrl);
-  if(okSp){ note.textContent = diag + "Source: SP (miroir utilisé pour l’âge)"; return; }
-
-  const okMir = await showMirror(pick.url);
-  if(okMir){ note.textContent = diag + "SP KO → Source: Miroir"; }
-  else { img.src = ERR_IMG_SP; setStamp("Erreur (sources KO)"); note.textContent = diag + "SP KO + miroir KO → Erreur"; }
+  await show(ERR_IMG_SP, "Erreur");
+  note.textContent = diag + "\n→ Erreur (sources indisponibles)";
 }
 
 setInterval(()=>tick(false), REFRESH_MS);
