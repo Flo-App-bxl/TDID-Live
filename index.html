@@ -13,7 +13,6 @@
   .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer}
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
   .spacer{flex:1}
-  .login{margin-left:auto}
   .wrap{height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center}
   img{max-width:100%;max-height:100%;object-fit:contain}
   .stamp{margin-left:12px;opacity:.85;font-size:.9em}
@@ -27,7 +26,7 @@
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
     <div class="spacer"></div>
-    <button class="btn login" id="login">Se connecter STIB</button>
+    <button class="btn" id="login">Se connecter STIB</button>
     <span class="stamp" id="stamp">—</span>
   </div>
 
@@ -38,27 +37,25 @@
 /* ====== CONFIG SP (tes chemins) ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
-
-/* URL du dossier pour forcer l’authent (ouvre en nouvel onglet) */
+/* Page du dossier pour poser les cookies en top-level (nouvel onglet) */
 const AUTH_URL  = "https://stibmivb-my.sharepoint.com/:f:/g/personal/florent_legrain_stib_brussels/Egev8zHPF45CryuaiZy2wRQBE-EbPRBrLRscn7G4oMXkuQ?e=LuS5ex";
+/* rafraîchissement & seuil d’obsolescence */
+const REFRESH_MS = 3000;      // 3 s
+const STALE_MS   = 120000;    // 2 min
 
-/* Fabrique une URL brute (pas le viewer SP) */
+/* URLs SP “download direct” */
 function spRaw(file){
   const src = `${SP_FOLDER}/${file}`;
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}`;
 }
-
-/* Fichiers */
 const DATA = {
   brel:   { img: spRaw("live_brel.png"),   age: spRaw("live_brel.age.txt")   },
   delta:  { img: spRaw("live_delta.png"),  age: spRaw("live_delta.age.txt")  },
   erasme: { img: spRaw("live_erasme.png"), age: spRaw("live_erasme.age.txt") }
 };
-const ERR_IMG    = spRaw("TDID_Erreur.png");
-const REFRESH_MS = 3000;      // 3 s
-const STALE_MS   = 120000;    // 2 min
-/* ===================================== */
+const ERR_IMG = spRaw("TDID_Erreur.png");
 
+/* ====== UI ====== */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
@@ -68,107 +65,123 @@ const btns  = {
   erasme: document.getElementById('erasme')
 };
 document.getElementById('login').onclick = () => {
-  // Ouvre le dossier SP dans un nouvel onglet (important pour iPhone/Safari)
-  window.open(AUTH_URL, '_blank', 'noopener');
-  // On réessaie de charger peu après
+  window.open(AUTH_URL, '_blank', 'noopener'); // ne remplace pas la page
   setTimeout(()=>tick(true), 2000);
 };
 
 let depot  = localStorage.getItem('tdid_depot') || 'brel';
 let lastOk = 0;               // dernier affichage image OK (ms)
 let lastBlobUrl = null;       // pour révoquer l’URL blob précédente
-
-function setActive(){
-  for (const k in btns) btns[k].classList.toggle('active', k===depot);
-}
-for (const k in btns){
-  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
-}
+function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
+for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
-// Cache-buster
+/* utilitaires */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-/* Parse robuste d’un epoch venant du .age.txt
-   - Ne garde que les chiffres continus (gère “1762021821999,9997”)
-   - Tronque à 13 chiffres (ms)
-   - Si 10..12 chiffres -> secondes -> ms
-*/
+/* parse epoch: récupère le plus gros paquet de chiffres, tronque à 13 (ms), seconds->ms */
 function parseEpochLike(raw){
   if (raw == null) return null;
-  const s = String(raw).replace(/^\uFEFF/,''); // BOM
-  const m = s.match(/\d{10,17}/);              // paquet de chiffres
-  if (!m) return null;
-  let num = m[0];
-  if (num.length > 13) num = num.slice(0,13);
-  let ms = parseInt(num,10);
-  if (!Number.isFinite(ms)) return null;
+  const s = String(raw).replace(/^\uFEFF/,'');
+  const m = s.match(/\d{10,17}/); if (!m) return null;
+  let num = m[0]; if (num.length > 13) num = num.slice(0,13);
+  let ms = parseInt(num,10); if (!Number.isFinite(ms)) return null;
   if (ms < 1e12) ms *= 1000;
   return ms;
 }
 
-async function readAge(url){
+/* fetch “auth-aware” : on regarde aussi Content-Type (SharePoint peut renvoyer du HTML login en 200) */
+async function fetchAuthAware(url, opts={}){
+  let r;
   try{
-    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
-    if (!r.ok) return {ms:null, why:'HTTP '+r.status};
-    const raw = await r.text();
-    const ms  = parseEpochLike(raw);
-    if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
-    return {ms, why:null};
-  }catch(e){ return {ms:null, why:'fetch'}; }
+    r = await fetch(url, { cache:'no-store', credentials:'include', redirect:'follow', ...opts });
+  }catch(e){
+    return { ok:false, status:0, headers:new Headers(), text:async()=>"", blob:async()=>new Blob() };
+  }
+  const ct = (r.headers.get('Content-Type')||"").toLowerCase();
+  if (r.status===401 || r.status===403 || ct.startsWith('text/html')){
+    // on laisse la page affichée + bouton login ; sur PC connecté ça ne devrait pas arriver
+  }
+  return r;
 }
 
-/* Charge l’image via fetch(no-store, credentials) -> blob -> ObjectURL
-   pour contourner les caches agressifs */
-async function loadImageNoStore(src){
+/* lecture age.txt ; fallback HEAD sur l’image pour Last-Modified si age.txt KO */
+async function readAge(ageUrl, imgUrl){
+  // essai 1 : age.txt
   try{
-    const r = await fetch(cb(src), {cache:'no-store', credentials:'include'});
-    if (!r.ok) throw new Error('HTTP '+r.status);
-    const blob = await r.blob();
-    if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-    const url = URL.createObjectURL(blob);
-    lastBlobUrl = url;
-    return url;
-  }catch(e){ return null; }
+    const r = await fetchAuthAware(cb(ageUrl));
+    if (r.ok){
+      const raw = await r.text();
+      const ms  = parseEpochLike(raw);
+      if (Number.isFinite(ms)) return {ms, why:null};
+    }
+  }catch(e){}
+  // essai 2 : HEAD image -> Last-Modified
+  try{
+    const r2 = await fetchAuthAware(cb(imgUrl), { method:'HEAD' });
+    const lm = r2.headers.get('Last-Modified');
+    if (lm){
+      const ms = new Date(lm).getTime();
+      if (Number.isFinite(ms)) return {ms, why:'last-modified'};
+    }
+  }catch(e){}
+  return {ms:null, why:'unavailable'};
+}
+
+/* charge image – d’abord en fetch->blob (anti-cache), sinon fallback direct en img.src */
+async function showImageHybrid(src){
+  // tentative 1 : fetch -> blob
+  try{
+    const r = await fetchAuthAware(cb(src));
+    const ct = (r.headers.get('Content-Type')||"").toLowerCase();
+    if (r.ok && !ct.startsWith('text/html')){
+      const blob = await r.blob();
+      if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
+      const url = URL.createObjectURL(blob);
+      lastBlobUrl = url;
+      await new Promise(res=>{
+        img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); res(true); };
+        img.onerror = ()=>{ res(false); };
+        img.src = url;
+      });
+      return true;
+    }
+  }catch(e){}
+  // tentative 2 : simple assignation (le navigateur gère les cookies différemment)
+  return await new Promise(res=>{
+    img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); res(true); };
+    img.onerror = ()=>{ stamp.textContent = "Image KO • " + new Date().toLocaleString(); res(false); };
+    img.src = cb(src);
+  });
 }
 
 async function tick(force=false){
   const {img:imgUrl, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) contrôle d’âge
-  const info = await readAge(ageUrl);
+  // 1) âge (prioritaire) avec fallback Last-Modified
+  const info = await readAge(ageUrl, imgUrl);
   if (info.ms !== null){
-    const delta = Date.now() - info.ms;        // ms (>= 0 si tout va bien)
+    const delta = Date.now() - info.ms;
     const dSec  = Math.round(delta/1000);
-    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
+    diag += `age ${info.why?info.why:'txt'} • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
     if (delta >= STALE_MS){
-      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
+      if (lastBlobUrl){ URL.revokeObjectURL(lastBlobUrl); lastBlobUrl=null; }
       img.src = ERR_IMG;
       stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
       note.textContent = diag + "\n→ Affichage Erreur";
       return;
     }
   } else {
-    diag += `age.txt indisponible (${info.why}) • tentative image`;
+    diag += `age indisponible • tentative image`;
   }
 
-  // 2) chargement de l’image (anti-cache & auth incluse)
-  const blobUrl = await loadImageNoStore(imgUrl);
-  if (blobUrl){
-    img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); };
-    img.onerror = ()=>{ stamp.textContent = "Image KO (connexion STIB requise ?) • " + new Date().toLocaleString(); };
-    img.src = blobUrl;
-  } else {
-    // Pas d’image & stale → erreur
-    if (!force && lastOk>0 && (Date.now()-lastOk)>=STALE_MS){
-      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
-      img.src = ERR_IMG;
-      diag += "\nimage KO → Erreur";
-    } else {
-      // Probablement non connecté : message explicite
-      stamp.textContent = "Image KO (connexion STIB requise ?) • " + new Date().toLocaleString();
-    }
+  // 2) image (hybride)
+  const ok = await showImageHybrid(imgUrl);
+  if (!ok && (lastOk>0 && Date.now()-lastOk>=STALE_MS)){
+    if (lastBlobUrl){ URL.revokeObjectURL(lastBlobUrl); lastBlobUrl=null; }
+    img.src = ERR_IMG;
+    diag += "\nimage KO → Erreur";
   }
 
   note.textContent = diag;
@@ -176,6 +189,9 @@ async function tick(force=false){
 
 setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
+
+// quand tu reviens sur l’onglet (ex: après login), on retente
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) tick(true); });
 </script>
 </body>
 </html>
