@@ -115,7 +115,7 @@ async function tick(force=false){
     let delta = nowRef - info.ms;
     if (Math.abs(delta) > 86400000) delta = Date.now() - info.ms; // garde-fou (1 jour)
     const dSec = Math.round(delta/1000);
-    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
+    diag += `age.txt OK • Δ=${dSec}sec → ${dSec>=120 ? 'STALE' : 'OK'}`;
     if (delta >= STALE_MS){
       if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
       img.src = ERR_IMG;
