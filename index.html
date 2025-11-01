@@ -16,6 +16,7 @@
   img{max-width:100%;max-height:100%;object-fit:contain}
   .stamp{margin-left:auto;opacity:.85;font-size:.9em}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line}
+  #loginBtn{position:fixed;top:72px;right:12px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#1a5bff;color:#fff;z-index:20;display:none}
 </style>
 </head>
 <body>
@@ -27,16 +28,24 @@
     <span class="stamp" id="stamp">—</span>
   </div>
 
+  <button id="loginBtn" title="Ouvrir OneDrive pour poser les cookies STIB">Se connecter au compte STIB</button>
+
   <div class="wrap"><img id="view" alt="TDID Live"></div>
   <div class="note" id="note"></div>
 
 <script>
-/* ====== CONFIG SP ====== 
-   OneDrive pro perso (ton compte) */
+/* ====== CONFIG SP ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 
-/* Fabrique une URL brute (pas le viewer) */
+/* Page à ouvrir en top-level pour poser les cookies (auth STIB) */
+const SP_SIGNIN_PAGE =
+  "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fflorent_legrain_stib_brussels%2FDocuments%2FLiveMirror";
+
+/* après combien d’échecs on force la redirection (0 = jamais) */
+const AUTO_REDIRECT_AFTER_FAILS = 0;
+
+/* Fabrique une URL brute (download direct) */
 function spRaw(file){
   const src = `${SP_FOLDER}/${file}`;
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}`;
@@ -56,6 +65,7 @@ const STALE_MS   = 120000;    // 2 min
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
+const loginBtn = document.getElementById('loginBtn');
 const btns  = {
   brel:   document.getElementById('brel'),
   delta:  document.getElementById('delta'),
@@ -64,6 +74,7 @@ const btns  = {
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
 let lastOk = 0;
+let consecutiveAuthFails = 0;
 
 function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
 for(const k in btns){
@@ -71,42 +82,66 @@ for(const k in btns){
 }
 setActive();
 
+loginBtn.onclick = () => { window.location.href = SP_SIGNIN_PAGE; };
+function showSigninHint() {
+  if (loginBtn.style.display !== 'inline-block') loginBtn.style.display = 'inline-block';
+  if (!note.textContent.includes('Connexion STIB requise')) {
+    note.textContent = (note.textContent ? note.textContent + "\n" : "")
+      + "Connexion STIB requise : cliquez « Se connecter au compte STIB », authentifiez-vous (OneDrive), puis revenez ici.";
+  }
+}
+
+/* Ajoute un cache-buster */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-/* Parse robuste : retire BOM et tout sauf chiffres */
+/* Parse robuste : retire BOM / séparateur / bruit, gère secondes et ms, TZ locale future */
 function normalizeEpoch(raw){
   if (raw == null) return null;
-  // retire BOM éventuel + spaces
-  let s = String(raw).replace(/^\uFEFF/, '').trim();
-  // si le fichier a été “contaminé”, on ne garde que les chiffres
-  if (!/^\d+$/.test(s)) s = s.replace(/[^\d]/g,'');
+  let s = String(raw).replace(/^\uFEFF/, '').trim().replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(s)) s = s.replace(/[^\d.]/g,'');
   if (!s) return null;
-  let ms = Number(s);
-  if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;                 // secondes -> ms
-  const now = Date.now();
-  if (ms - now > 10*60*1000){                // futur improbable => corrige TZ locale
-    const offsetMin = new Date().getTimezoneOffset();
-    ms = ms - offsetMin*60000;
+  let n = Number.parseFloat(s);
+  if (!Number.isFinite(n)) return null;
+  if (n < 1e12) n = Math.round(n*1000); else n = Math.round(n);
+  if (n - Date.now() > 600000){ n -= new Date().getTimezoneOffset()*60000; }
+  return n;
+}
+
+/* fetch avec détection d’auth : 401/403 ou Content-Type text/html => pas connecté */
+async function fetchAuthAware(url){
+  try{
+    const r = await fetch(url, {cache:'no-store', credentials:'include', redirect:'follow'});
+    const ct = (r.headers.get('Content-Type')||"").toLowerCase();
+    if (r.status===401 || r.status===403 || ct.startsWith('text/html')) {
+      consecutiveAuthFails++;
+      showSigninHint();
+      if (AUTO_REDIRECT_AFTER_FAILS>0 && consecutiveAuthFails>=AUTO_REDIRECT_AFTER_FAILS) {
+        window.location.href = SP_SIGNIN_PAGE;
+      }
+    } else {
+      consecutiveAuthFails = 0;
+    }
+    return r;
+  }catch(e){
+    consecutiveAuthFails++;
+    showSigninHint();
+    return { ok:false, status:0, text:async()=>"", headers:new Headers() };
   }
-  return ms;
 }
 
 async function readAge(url){
-  try{
-    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
-    if(!r.ok) return {ms:null, why:'HTTP '+r.status};
-    const raw = await r.text();
-    const ms  = normalizeEpoch(raw);
-    if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
-    return {ms, why:null};
-  }catch(e){ return {ms:null, why:'fetch'}; }
+  const r = await fetchAuthAware(cb(url));
+  if(!r.ok) return {ms:null, why:'HTTP '+r.status};
+  const raw = await r.text();
+  const ms  = normalizeEpoch(raw);
+  if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
+  return {ms, why:null};
 }
 
 function showImage(src){
   return new Promise(resolve=>{
     img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); resolve(true); };
-    img.onerror = ()=>{ stamp.textContent = "Image KO (connecté STIB ?) • " + new Date().toLocaleString(); resolve(false); };
+    img.onerror = ()=>{ stamp.textContent = "Image KO (connexion STIB requise ?) • " + new Date().toLocaleString(); showSigninHint(); resolve(false); };
     img.src = cb(src);
   });
 }
