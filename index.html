@@ -1,3 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TDID Live – Brel / Delta / Erasm.</title>
+<style>
+  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  body{padding-top:64px}
+  .top{position:fixed;top:0;left:0;right:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
+  .brand{font-weight:700;margin-right:8px}
+  .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer}
+  .btn.active{background:var(--accent);color:#fff;border-color:transparent}
+  .wrap{height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center}
+  img{max-width:100%;max-height:100%;object-fit:contain}
+  .stamp{margin-left:auto;opacity:.85;font-size:.9em}
+  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line}
+</style>
+</head>
+<body>
+  <div class="top">
+    <span class="brand">TDID Live</span>
+    <button class="btn" id="brel">Brel</button>
+    <button class="btn" id="delta">Delta</button>
+    <button class="btn" id="erasme">Erasm.</button>
+    <span class="stamp" id="stamp">—</span>
+  </div>
+
+  <div class="wrap"><img id="view" alt="TDID Live"></div>
+  <div class="note" id="note"></div>
+
 <script>
 const ROOT = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
 const DEPOTS = ["brel","delta","erasme"];
@@ -98,3 +131,6 @@ async function tick(force=false){
 setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
 </script>
+
+</body>
+</html>
