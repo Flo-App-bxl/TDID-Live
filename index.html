@@ -21,9 +21,9 @@
 <body>
   <div class="top">
     <span class="brand">TDID Live</span>
-    <button class="btn" id="brel">Brel</button>
-    <button class="btn" id="delta">Delta</button>
-    <button class="btn" id="erasme">Erasm.</button>
+    <button class="btn" id="Brel">Brel</button>
+    <button class="btn" id="Delta">Delta</button>
+    <button class="btn" id="Erasme">Erasm.</button>
     <span class="stamp" id="stamp">—</span>
   </div>
 
@@ -31,115 +31,94 @@
   <div class="note" id="note"></div>
 
 <script>
-/* === Lecture directe RAW GitHub (instantané) === */
-const RAW = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
+/* --- Config --- */
+const REPO = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
 const DATA = {
-  brel:   { img: RAW + "live_brel.png",   age: RAW + "live_brel.age.txt"   },
-  delta:  { img: RAW + "live_delta.png",  age: RAW + "live_delta.age.txt"  },
-  erasme: { img: RAW + "live_erasme.png", age: RAW + "live_erasme.age.txt" }
+  brel:   { img: REPO+"live_brel.png",   age: REPO+"live_brel.age.txt"   },
+  delta:  { img: REPO+"live_delta.png",  age: REPO+"live_delta.age.txt"  },
+  erasme: { img: REPO+"live_erasme.png", age: REPO+"live_erasme.age.txt" }
 };
-const ERR_IMG    = RAW + "TDID_Erreur.png";
+const ERR_IMG  = REPO+"TDID_Erreur.png";
 const REFRESH_MS = 3000;
-const STALE_SEC  = 120; // ⏱ 2 minutes exactes
+const STALE_MS   = 120000;
 
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-const btns  = { brel:   document.getElementById('brel'),
-                delta:  document.getElementById('delta'),
-                erasme: document.getElementById('erasme') };
+const btns  = {
+  brel:   document.getElementById('Brel'),
+  delta:  document.getElementById('delta'),
+  erasme: document.getElementById('erasme')
+};
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
 let lastOk = 0;
 let lastBlobUrl = null;
-const lastAgeSeen = { brel:0, delta:0, erasme:0 };
 
-function setActive(){ for (const k in btns) btns[k].classList.toggle('active', k===depot); }
-for (const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
+function setActive(){
+  for (const k in btns) btns[k].classList.toggle('active', k===depot);
+}
+for (const k in btns){
+  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
+}
 setActive();
 
-const bust = () => 't=' + Date.now();
-const ver  = (base, v) => base + (base.includes('?')?'&':'?') + 'v=' + v + '&' + bust();
-
-/* Timestamp → epoch ms ; corrige si epoch "local" (Excel/VBA) */
+/* Convertit age.txt en UTC millisecondes */
 function normalizeEpoch(raw){
-  let ms = Number(String(raw).trim());
-  if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;              // secondes -> ms
-  const nowUtc = Date.now();
-  if (ms - nowUtc > 10*60*1000) {         // semble futur => epoch local
-    const offsetMin = new Date().getTimezoneOffset(); // UTC - local (souvent -60 / -120)
-    ms = ms + offsetMin*60000;            // ✅ UTC = local + offset
-  }
-  return ms;
+  let n = Number(String(raw).trim());
+  if (!Number.isFinite(n)) return null;
+  if (n < 1e12) n *= 1000; // secondes → ms
+  // Si le timestamp semble "futur", on corrige d’un offset local
+  if (n - Date.now() > 600000) n -= new Date().getTimezoneOffset()*60000;
+  return n;
 }
 
-/* Lire age.txt (no-store) + heure serveur (header Date) */
 async function readAge(url){
   try{
-    const r = await fetch(url + (url.includes('?')?'&':'?') + bust(), {cache:'no-store'});
-    if (!r.ok) return {ms:null, why:'HTTP '+r.status, serverNow:null};
-    const serverNow = r.headers.get('Date') ? new Date(r.headers.get('Date')).getTime() : null;
-    const ms = normalizeEpoch((await r.text()).trim());
-    return {ms, why:null, serverNow};
-  }catch{ return {ms:null, why:'fetch', serverNow:null}; }
+    const r = await fetch(url+'?nocache='+Date.now(), {cache:'no-store'});
+    if (!r.ok) return {ms:null, why:'HTTP '+r.status};
+    const txt = (await r.text()).trim();
+    const ms = normalizeEpoch(txt);
+    return {ms, why:null};
+  }catch{ return {ms:null, why:'fetch'}; }
 }
 
-/* Charger une image en blob (anti-cache CDN) */
-async function loadImageNoStore(srcWithVersion){
+async function fetchImageNoCache(url){
   try{
-    const r = await fetch(srcWithVersion, {cache:'no-store'});
+    const r = await fetch(url+'?v='+Date.now(), {cache:'no-store'});
     if (!r.ok) throw new Error('HTTP '+r.status);
     const blob = await r.blob();
     if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-    const url = URL.createObjectURL(blob);
-    return url;
+    lastBlobUrl = URL.createObjectURL(blob);
+    return lastBlobUrl;
   }catch{ return null; }
 }
 
 async function tick(force=false){
-  const {img:imgBase, age:ageUrl} = DATA[depot];
+  const {img:imgUrl, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) Lire l'âge
-  const info = await readAge(ageUrl);
-  if (info.ms !== null){
-    const nowRef = info.serverNow ?? Date.now();
-    let dSec = Math.round((nowRef - info.ms)/1000);
-    if (Math.abs(dSec) > 86400) dSec = Math.round((Date.now()-info.ms)/1000); // garde-fou 24h
-
-    diag += `age.txt OK • Δ=${dSec}sec → ${dSec>=STALE_SEC ? 'STALE' : 'OK'}`;
-
-    // 1a) trop vieux → écran erreur immédiat (à 120 s)
-    if (dSec >= STALE_SEC){
-      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
+  const {ms, why} = await readAge(ageUrl);
+  if (ms){
+    const deltaMs = Date.now() - ms;
+    const dSec = Math.round(deltaMs/1000);
+    diag += `age.txt OK • Δ=${dSec>=0?'+':''}${dSec}s → ${dSec>=300?'STALE':'OK'}`;
+    if (deltaMs>=STALE_MS){
       img.src = ERR_IMG;
-      stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
-      note.textContent = diag + "\n→ Affichage Erreur";
+      stamp.textContent = "Hors service (≥5 min) • "+new Date().toLocaleTimeString();
+      note.textContent = diag+"\n→ Affichage Erreur";
       return;
     }
+  } else diag += `age.txt indisponible (${why})`;
 
-    // 1b) l'âge a changé → on charge l'image versionnée par cet age
-    const ageChanged = info.ms !== lastAgeSeen[depot];
-    const imgUrlV = ver(imgBase, info.ms); // 👈 URL unique par âge (= anti-cache dur)
-    if (force || ageChanged){
-      const blobUrl = await loadImageNoStore(imgUrlV);
-      if (blobUrl){
-        img.onload = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); };
-        img.onerror= ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
-        lastBlobUrl = blobUrl; img.src = blobUrl; lastAgeSeen[depot] = info.ms;
-      }else if (!force && lastOk>0 && (Math.round((Date.now()-lastOk)/1000) >= STALE_SEC)){
-        if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
-        img.src = ERR_IMG; diag += "\nimage KO → Erreur";
-      }
-    }
-  } else {
-    diag += `age.txt indisponible (${info.why}) • fallback sur image`;
-    // fallback image avec cache-buster simple
-    const blobUrl = await loadImageNoStore(DATA[depot].img + '?'+bust());
-    if (blobUrl){ lastBlobUrl = blobUrl; img.src = blobUrl; lastOk = Date.now(); }
+  const blobUrl = await fetchImageNoCache(imgUrl);
+  if (blobUrl){
+    img.src = blobUrl;
+    img.onload = ()=>{ lastOk=Date.now(); stamp.textContent = new Date().toLocaleTimeString(); };
+  } else if (!force && lastOk>0 && Date.now()-lastOk>STALE_MS){
+    img.src = ERR_IMG;
+    diag += "\nimage KO → Erreur";
   }
-
   note.textContent = diag;
 }
 
