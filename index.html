@@ -133,7 +133,7 @@ async function tick(force=false){
       if (ts_ms){
         ageMs = Date.now() - ts_ms;
         ageFrom = 'SP latest.json';
-        diag += `\nâge via SP latest.json • Δ=${Math.round(ageMs/1000)}s`;
+        diag += `\nâge via SP latest.json • Δ=${Math.round(ageMs/1000)}sec`;
       } else {
         diag += `\nlatest.json présent mais sans timestamp valide`;
       }
