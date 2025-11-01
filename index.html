@@ -31,73 +31,65 @@
   <div class="note" id="note"></div>
 
 <script>
-/* === Mode instantané (lecture directe GitHub RAW, sans GitHub Pages) === */
+/* === Mode instantané : lecture RAW GitHub === */
 const RAW = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
-
 const DATA = {
   brel:   { img: RAW + "live_brel.png",   age: RAW + "live_brel.age.txt"   },
   delta:  { img: RAW + "live_delta.png",  age: RAW + "live_delta.age.txt"  },
   erasme: { img: RAW + "live_erasme.png", age: RAW + "live_erasme.age.txt" }
 };
 const ERR_IMG    = RAW + "TDID_Erreur.png";
-const REFRESH_MS = 3000;      // 3 s
-const STALE_MS   = 120000;    // 2 min
+const REFRESH_MS = 3000;
+const STALE_MS   = 120000;
 
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-const btns  = {
-  brel:   document.getElementById('brel'),
-  delta:  document.getElementById('delta'),
-  erasme: document.getElementById('erasme')
-};
+const btns  = { brel:   document.getElementById('brel'),
+                delta:  document.getElementById('delta'),
+                erasme: document.getElementById('erasme') };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
 let lastOk = 0;
 let lastBlobUrl = null;
+const lastAgeSeen = { brel:0, delta:0, erasme:0 };
 
-function setActive(){
-  for (const k in btns) btns[k].classList.toggle('active', k===depot);
-}
-for (const k in btns){
-  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
-}
+function setActive(){ for (const k in btns) btns[k].classList.toggle('active', k===depot); }
+for (const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
-// anti-cache : ajoute ?t=timestamp
+// helpers
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
+const ver = (base, v) => base + (base.includes('?')?'&':'?') + 'v=' + v + '&t=' + Date.now();
 
-/* --- Correction UTC/local pour timestamps Excel/VBA --- */
+/* Normalise epoch (ms) et corrige epoch "local" → UTC */
 function normalizeEpoch(raw){
   let ms = Number(String(raw).trim());
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000; // secondes -> ms
-
+  if (ms < 1e12) ms *= 1000;
   const nowUtc = Date.now();
-  // Si dans le futur (>10 min) → timestamp local → corrige vers UTC
-  if (ms - nowUtc > 10 * 60 * 1000) {
-    const offsetMin = new Date().getTimezoneOffset(); // = UTC - local (ex: -60)
-    ms = ms + offsetMin * 60000;                      // ✅ UTC = local + offset
+  if (ms - nowUtc > 10*60*1000){                // semble futur ⇒ epoch local
+    const offsetMin = new Date().getTimezoneOffset(); // UTC - local (ex -60/-120)
+    ms = ms + offsetMin*60000;                  // ✅ UTC = local + offset
   }
   return ms;
 }
 
-/* --- Lecture age.txt + heure serveur HTTP --- */
+/* age.txt (no-store) + heure serveur */
 async function readAge(url){
   try{
     const r = await fetch(cb(url), {cache:'no-store'});
     if (!r.ok) return {ms:null, why:'HTTP '+r.status, serverNow:null};
-    const srvNow = r.headers.get('Date') ? new Date(r.headers.get('Date')).getTime() : null;
-    const txt = (await r.text()).trim();
-    const ms = normalizeEpoch(txt);
-    return {ms, why:null, serverNow:srvNow};
+    const srv = r.headers.get('Date'); const serverNow = srv ? new Date(srv).getTime() : null;
+    const ms = normalizeEpoch((await r.text()).trim());
+    return {ms, why:null, serverNow};
   }catch{ return {ms:null, why:'fetch', serverNow:null}; }
 }
 
-/* --- Chargement image (anti-cache fort) --- */
+/* Image via blob pour contourner tous caches */
 async function loadImageNoStore(src){
   try{
-    const r = await fetch(cb(src), {cache:'no-store'});
+    const r = await fetch(src, {cache:'no-store'}); // src contient déjà v=age&t=now
     if (!r.ok) throw new Error('HTTP '+r.status);
     const blob = await r.blob();
     if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
@@ -106,11 +98,11 @@ async function loadImageNoStore(src){
   }catch{ return null; }
 }
 
-/* --- Boucle principale --- */
 async function tick(force=false){
-  const {img:imgUrl, age:ageUrl} = DATA[depot];
+  const {img:imgBase, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
+  // 1) lire age
   const info = await readAge(ageUrl);
   if (info.ms !== null){
     const nowRef = info.serverNow ?? Date.now();
@@ -118,6 +110,8 @@ async function tick(force=false){
     if (Math.abs(delta) > 86400000) delta = Date.now() - info.ms; // garde-fou
     const dSec = Math.round(delta/1000);
     diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
+
+    // 1a) si trop vieux → écran erreur
     if (delta >= STALE_MS){
       if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
       img.src = ERR_IMG;
@@ -125,26 +119,37 @@ async function tick(force=false){
       note.textContent = diag + "\n→ Affichage Erreur";
       return;
     }
+
+    // 1b) si age a changé → recharger l'image avec v=age (versionnement dur)
+    const ageChanged = info.ms !== lastAgeSeen[depot];
+    const imgUrl = ver(imgBase, info.ms); // <-- URL unique par age
+    if (force || ageChanged){
+      const blobUrl = await loadImageNoStore(imgUrl);
+      if (blobUrl){
+        img.onload = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); };
+        img.onerror= ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
+        lastBlobUrl = blobUrl; img.src = blobUrl; lastAgeSeen[depot] = info.ms;
+      }else if (!force && lastOk>0 && (Date.now()-lastOk)>=STALE_MS){
+        if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
+        img.src = ERR_IMG; diag += "\nimage KO → Erreur";
+      }
+    } else {
+      // age identique → rafraîchit légèrement l'image pour garder vivant
+      if (Date.now()-lastOk > 30*1000){ // toutes les 30s max
+        const blobUrl = await loadImageNoStore(imgUrl);
+        if (blobUrl){ lastBlobUrl = blobUrl; img.src = blobUrl; lastOk = Date.now(); }
+      }
+    }
   } else {
     diag += `age.txt indisponible (${info.why}) • fallback sur image`;
-  }
-
-  const blobUrl = await loadImageNoStore(imgUrl);
-  if (blobUrl){
-    img.onload = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); };
-    img.onerror= ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
-    lastBlobUrl = blobUrl;
-    img.src = blobUrl;
-  } else if (!force && lastOk>0 && (Date.now()-lastOk)>=STALE_MS){
-    if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
-    img.src = ERR_IMG;
-    diag += "\nimage KO → Erreur";
+    // fallback : tente quand même l'image avec cache-buster simple
+    const blobUrl = await loadImageNoStore(cb(imgBase));
+    if (blobUrl){ lastBlobUrl = blobUrl; img.src = blobUrl; lastOk = Date.now(); }
   }
 
   note.textContent = diag;
 }
 
-/* --- Lancement --- */
 setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
 </script>
