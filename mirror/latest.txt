@@ -1,4 +1,0 @@
-brel=brel_20251101T220514Z.png
-delta=delta_20251101T220514Z.png
-erasme=erasme_20251101T220514Z.png
-updated=1762034714
