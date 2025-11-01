@@ -46,7 +46,7 @@ const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
 const btns  = {
-  brel:   document.getElementById('Brel'),
+  brel:   document.getElementById('brel'),
   delta:  document.getElementById('delta'),
   erasme: document.getElementById('erasme')
 };
@@ -102,10 +102,10 @@ async function tick(force=false){
   if (ms){
     const deltaMs = Date.now() - ms;
     const dSec = Math.round(deltaMs/1000);
-    diag += `age.txt OK • Δ=${dSec>=0?'+':''}${dSec}s → ${dSec>=300?'STALE':'OK'}`;
+    diag += `age.txt OK • Δ=${dSec>=0?'+':''}${dSec}s → ${dSec>=120?'STALE':'OK'}`;
     if (deltaMs>=STALE_MS){
       img.src = ERR_IMG;
-      stamp.textContent = "Hors service (≥5 min) • "+new Date().toLocaleTimeString();
+      stamp.textContent = "Hors Service (≥2 min) • "+new Date().toLocaleTimeString();
       note.textContent = diag+"\n→ Affichage Erreur";
       return;
     }
