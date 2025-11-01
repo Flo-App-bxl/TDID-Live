@@ -31,63 +31,39 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ========================
-   CONFIG
-   ======================== */
-
-/* SharePoint (source prioritaire si dispo) */
+/* ====== SharePoint (fichiers) ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
-const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${
-  encodeURIComponent(SP_FOLDER + "/" + f)
-}`;
+const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
 
-/* Miroir (GitHub Pages + API GitHub pour lister le dernier fichier) */
-const GH_USER   = "Flo-App-bxl";
-const GH_REPO   = "TDID-Live";
-const GH_BRANCH = "gh-pages";
-
-const MIRROR_DIR_PAGES = `https://${GH_USER}.github.io/${GH_REPO}/mirror/`;
-const MIRROR_DIR_API   = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/mirror?ref=${GH_BRANCH}`;
-
-/* Dépôts (noms de fichiers SP) */
 const DATA = {
-  brel:   { spImg: spRaw("live_brel.png"),   spAge: spRaw("live_brel.age.txt"),   mirrorPrefix: "brel_"   },
-  delta:  { spImg: spRaw("live_delta.png"),  spAge: spRaw("live_delta.age.txt"),  mirrorPrefix: "delta_"  },
-  erasme: { spImg: spRaw("live_erasme.png"), spAge: spRaw("live_erasme.age.txt"), mirrorPrefix: "erasme_" }
+  brel:   { spImg: spRaw("live_brel.png"),   spAge: spRaw("live_brel.age.txt"),   },
+  delta:  { spImg: spRaw("live_delta.png"),  spAge: spRaw("live_delta.age.txt"),  },
+  erasme: { spImg: spRaw("live_erasme.png"), spAge: spRaw("live_erasme.age.txt"), }
 };
 const ERR_IMG_SP = spRaw("TDID_Erreur.png");
+
+/* JSON SP émis par le publish PowerShell */
+const SP_LATEST = spRaw("mirror_latest.json");
 
 /* Rafraîchissement + seuil 5 minutes */
 const REFRESH_MS = 3000;
 const STALE_MS   = 5 * 60 * 1000;
 
-/* ========================
-   UI
-   ======================== */
+/* UI */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-const btns  = {
-  brel:  document.getElementById('brel'),
-  delta: document.getElementById('delta'),
-  erasme:document.getElementById('erasme')
-};
+const btns  = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
 function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
-for(const k in btns){
-  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
-}
+for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-/* ========================
-   Helpers
-   ======================== */
-
-/* Parse epoch depuis le texte d’age.txt (robuste) */
+/* ====== Helpers ====== */
 function normalizeEpoch(raw){
   if (raw == null) return null;
   let s = String(raw).replace(/^\uFEFF/,'').trim();
@@ -95,7 +71,6 @@ function normalizeEpoch(raw){
   if (!s) return null;
   let ms = Number(s);
   if (ms < 1e12) ms *= 1000;
-  // si futur improbable → corrige fuseau local
   const now = Date.now();
   if (ms - now > 10*60*1000){
     const offsetMin = new Date().getTimezoneOffset();
@@ -103,8 +78,6 @@ function normalizeEpoch(raw){
   }
   return ms;
 }
-
-/* Lit age.txt côté SP (avec cookies d’entreprise) */
 async function readAgeSP(url){
   try{
     const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
@@ -115,38 +88,19 @@ async function readAgeSP(url){
     return {ms, why:null};
   }catch(e){ return {ms:null, why:'fetch'}; }
 }
-
-/* Extrait le timestamp UTC (ms) du nom ‘prefix_YYYYMMDDTHHMMSSZ.png’ */
-function tsFromMirrorName(name, prefix){
-  const re = new RegExp(`^${prefix}(\\d{8}T\\d{6}Z)\\.png$`, 'i');
-  const m = name.match(re);
-  if (!m) return null;
-  const ts = m[1]; // ex: 20251101T223620Z
-  const y = +ts.slice(0,4), mo=+ts.slice(4,6)-1, d=+ts.slice(6,8);
-  const h = +ts.slice(9,11), mi=+ts.slice(11,13), s=+ts.slice(13,15);
-  return Date.UTC(y,mo,d,h,mi,s); // en ms
-}
-
-/* Liste l’API GitHub pour trouver le dernier fichier miroir d’un dépôt */
-async function lastMirrorItem(prefix){
+async function readLatestSP(){
   try{
-    const r = await fetch(cb(MIRROR_DIR_API), {cache:'no-store'});
-    if(!r.ok) return {url:null, ts:null, why:'GitHub API dir HTTP '+r.status};
-    const arr = await r.json(); // [{name, type, ...}]
-    const candidates = (arr||[]).filter(it => it.type==='file' && it.name.toLowerCase().startsWith(prefix));
-    if (candidates.length===0) return {url:null, ts:null, why:'mirror vide'};
-    // on calcule le ts via le nom et on garde le plus récent
-    let best = null;
-    for(const it of candidates){
-      const ms = tsFromMirrorName(it.name, prefix);
-      if (ms!=null && (!best || ms>best.ts)){ best = {name: it.name, ts: ms}; }
-    }
-    if (!best) return {url:null, ts:null, why:'noms non conformes'};
-    return {url: MIRROR_DIR_PAGES + best.name, ts: best.ts, why:null};
-  }catch(e){ return {url:null, ts:null, why:'fetch'}; }
+    const r = await fetch(cb(SP_LATEST), {cache:'no-store', credentials:'include'});
+    if(!r.ok) return {ok:false, why:'HTTP '+r.status};
+    const j = await r.json();
+    return {ok:true, data:j};
+  }catch(e){ return {ok:false, why:'fetch'}; }
 }
-
-/* Affiche une image (SP ou Miroir) */
+function isoToMs(iso){
+  const d = new Date(iso);
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
 function show(src, label){
   return new Promise(resolve=>{
     img.onload  = ()=>{ stamp.textContent = `${label} • ${new Date().toLocaleString()}`; resolve(true); };
@@ -155,64 +109,66 @@ function show(src, label){
   });
 }
 
-/* ========================
-   Boucle principale
-   ======================== */
+/* ====== Boucle ====== */
 async function tick(force=false){
   const cfg = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) Essai âge SP
+  // 1) âge via SP (age.txt)
   const a = await readAgeSP(cfg.spAge);
   let ageMs = null, ageFrom = null;
 
   if (a.ms !== null){
     ageMs = Date.now() - a.ms;
-    ageFrom = 'SP';
+    ageFrom = 'SP age.txt';
     diag += `age(SP) OK • Δ=${Math.round(ageMs/1000)}s`;
   } else {
     diag += `age(SP) indisponible (${a.why})`;
-    // 2) Fallback : calcul âge via le DERNIER fichier miroir
-    const last = await lastMirrorItem(cfg.mirrorPrefix);
-    if (last.ts!=null){
-      ageMs = Date.now() - last.ts;
-      ageFrom = 'Miroir';
-      diag += `\nâge via miroir • Δ=${Math.round(ageMs/1000)}s`;
+    // 2) fallback: latest.json sur SP (écrit par PowerShell)
+    const L = await readLatestSP();
+    if (L.ok){
+      const key = depot; // 'brel' | 'delta' | 'erasme'
+      const item = L.data?.items?.[key];
+      const ts_ms = L.data?.updated_ms ?? (item?.ts_iso ? isoToMs(item.ts_iso) : null);
+      if (ts_ms){
+        ageMs = Date.now() - ts_ms;
+        ageFrom = 'SP latest.json';
+        diag += `\nâge via SP latest.json • Δ=${Math.round(ageMs/1000)}s`;
+      } else {
+        diag += `\nlatest.json présent mais sans timestamp valide`;
+      }
     } else {
-      diag += `\nmirror listing KO (${last.why})`;
+      diag += `\nlatest.json indisponible (${L.why})`;
     }
   }
 
-  // Si on a un âge (SP ou Miroir) et qu'il est trop vieux → erreur
+  // Si on a un âge (SP age.txt OU latest.json) et qu'il est trop vieux → erreur
   if (ageMs!=null && ageMs >= STALE_MS){
     await show(ERR_IMG_SP, "Erreur (retard ≥5min)");
     note.textContent = diag + `\n→ Erreur (origine : ${ageFrom} en retard)`;
     return;
   }
 
-  // 3) On affiche l’image :
-  //    - SP en premier si possible
+  // 3) Essayer d'afficher l'image SP (direct)
   const okSp = await show(cfg.spImg, "SP");
-  if (okSp){
-    note.textContent = diag + `\nsource: SP`;
-    return;
-  }
+  if (okSp){ note.textContent = diag + `\nsource: SP`; return; }
 
-  //    - Sinon le DERNIER miroir (pas un fichier stable)
-  const last = await lastMirrorItem(cfg.mirrorPrefix);
-  if (last.url){
-    const okMir = await show(last.url, "Miroir");
-    if (okMir){
-      note.textContent = diag + `\nsource: Miroir (dernier fichier)`;
-      return;
-    } else {
+  // 4) Sinon, utiliser l’URL miroir fournie par latest.json (si dispo)
+  const L2 = await readLatestSP();
+  if (L2.ok){
+    const item = L2.data?.items?.[depot];
+    if (item?.mirror_url){
+      const okMir = await show(item.mirror_url, "Miroir (latest.json)");
+      if (okMir){ note.textContent = diag + `\nsource: Miroir (latest.json)`; return; }
       diag += `\nimage miroir KO`;
+    } else {
+      diag += `\nlatest.json sans URL miroir`;
     }
   } else {
-    diag += `\nmirror introuvable (${last.why})`;
+    diag += `\nlatest.json indisponible (${L2.why})`;
   }
 
-  //    - Sinon erreur
+  // 5) Erreur
   await show(ERR_IMG_SP, "Erreur");
   note.textContent = diag + `\n→ Erreur (sources indisponibles)`;
 }
