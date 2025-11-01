@@ -31,85 +31,117 @@
   <div class="note" id="note"></div>
 
 <script>
-/* === SOURCES ONEDRIVE (avec download=1) === */
-const DATA = {
-  brel: {
-    age: "https://stibmivb-my.sharepoint.com/:t:/g/personal/florent_legrain_stib_brussels/ESQ221wQDP9PhsEViRwWOKABDoA7Vdy2ZaZMsaIOJzvZ2w?download=1",
-    img: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?download=1"
-  },
-  delta: {
-    age: "https://stibmivb-my.sharepoint.com/:t:/g/personal/florent_legrain_stib_brussels/EaSQDh9-RD9DimpKm0KyBecBYwV2eZ7JEiTToHWZD5l9FA?download=1",
-    img: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?download=1"
-  },
-  erasme: {
-    age: "https://stibmivb-my.sharepoint.com/:t:/g/personal/florent_legrain_stib_brussels/EZLW6urioyBOlh2YVod8wIMB2g9bYznK9ofcYRZdm802zw?download=1",
-    img: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQKsOLvrFUtMm3OAxC41BZQBoEg69j0smCZ_xSRq3ZsqVQ?download=1"
-  }
+/* ===================== CONFIG ===================== */
+/* Images PROTÉGÉES (SharePoint) – liens internes organisation + &download=1 */
+const IMG = {
+  brel:   "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?e=7HOG3k&download=1",
+  delta:  "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?e=yVvePu&download=1",
+  erasme: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EVlkXRiU6mRMuYfkn0Z2JwkBJ1SWQbK0ytMxOHvKQv8LRA?e=wWgCKu&download=1"
 };
-const ERR_IMG = "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EVlkXRiU6mRMuYfkn0Z2JwkBJ1SWQbK0ytMxOHvKQv8LRA?download=1";
-
+/* Âges PUBLICS (raw.githubusercontent.com) – CORS OK */
+const AGE = {
+  brel:   "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/live_brel.age.txt",
+  delta:  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/live_delta.age.txt",
+  erasme: "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/live_erasme.age.txt"
+};
+/* Image d’erreur (publique) – peut rester sur GitHub Pages */
+const ERR_IMG    = "https://flo-app-bxl.github.io/TDID-Live/TDID_Erreur.png";
+/* Rafraîchissement et seuil d’obsolescence */
 const REFRESH_MS = 3000;      // 3 s
 const STALE_MS   = 120000;    // 2 min
+/* ================================================== */
 
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-
-const btns = {
+const btns  = {
   brel:   document.getElementById('brel'),
   delta:  document.getElementById('delta'),
   erasme: document.getElementById('erasme')
 };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
-function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
-for(const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot',depot); setActive(); tick(true); }; }
+let lastOk = 0;
+
+function setActive(){
+  for(const k in btns){ btns[k].classList.toggle('active', k===depot); }
+}
+for(const k in btns){
+  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
+}
 setActive();
 
-async function fetchNoStore(u){ return fetch(u + (u.includes('?')?'&':'?') + 't=' + Date.now(), {cache:'no-store'}); }
-async function fetchText(u){ const r = await fetchNoStore(u); if(!r.ok) throw new Error('HTTP '+r.status); return {text:await r.text(), date:r.headers.get('Date')}; }
-async function fetchBlobUrl(u){ const r = await fetchNoStore(u); if(!r.ok) throw new Error('HTTP '+r.status); const b=await r.blob(); return URL.createObjectURL(b); }
+/* Ajoute un cache-buster */
+const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-function tzOffsetMs(){ return new Date().getTimezoneOffset()*60000; }
-function normalizeEpoch(raw, nowRef){
+/* Normalise un epoch (ms) :
+   - si en secondes => *1000
+   - si future de >10 min (cas rare d’époque locale) => corrige avec offset TZ */
+function normalizeEpoch(raw){
   let ms = Number(String(raw).trim());
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000; // sec -> ms
-  const delta = ms - nowRef;
-  if (delta > 0 && delta < 12*3600*1000){ // probable "heure locale"
-    ms = ms - tzOffsetMs();               // -> UTC
+  if (ms < 1e12) ms *= 1000;            // secondes -> ms
+  const now = Date.now();
+  if (ms - now > 10*60*1000){           // trop dans le futur -> corrige
+    const offsetMin = new Date().getTimezoneOffset(); // minutes
+    ms = ms - offsetMin*60000;          // UTC = local - offset
   }
   return ms;
 }
 
-async function tick(force=false){
-  const src = DATA[depot];
-  let diag = `Depot: ${depot}\n`;
+/* Lit age.txt (sur raw.githubusercontent.com) */
+async function readAge(url){
   try{
-    // 1) âge depuis OneDrive
-    const {text:ageTxt, date} = await fetchText(src.age);
-    const serverNow = date ? new Date(date).getTime() : Date.now();
-    const age = normalizeEpoch(ageTxt, serverNow);
-    if (age===null) throw new Error('age invalide');
+    const r = await fetch(cb(url), {cache:'no-store'});
+    if(!r.ok) return {ms:null, why:'HTTP '+r.status};
+    const raw = (await r.text()).trim();
+    const ms  = normalizeEpoch(raw);
+    if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
+    return {ms, why:null};
+  }catch(e){ return {ms:null, why:'fetch'}; }
+}
 
-    const dSec = Math.round((serverNow - age)/1000);
-    diag += `age.txt OK • Δ=${dSec>=0?'+':''}${dSec}s → ${dSec>=120?'STALE':'OK'}`;
-    if (dSec*1000 >= STALE_MS){
+/* Charge l’image en posant directement src (pas de fetch → pas de CORS),
+   avec cache-buster pour éviter les caches SharePoint/CDN */
+function showImage(src){
+  return new Promise(resolve=>{
+    img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); resolve(true); };
+    img.onerror = ()=>{ stamp.textContent = "Image non disponible • " + new Date().toLocaleString(); resolve(false); };
+    img.src = cb(src);
+  });
+}
+
+async function tick(force=false){
+  const imgUrl = IMG[depot];
+  const ageUrl = AGE[depot];
+  let diag = `Depot: ${depot}\n`;
+
+  // 1) Contrôle d’âge (prioritaire)
+  const a = await readAge(ageUrl);
+  if (a.ms !== null){
+    let delta = Date.now() - a.ms;           // ms écoulés depuis la capture
+    const dSec = Math.round(delta/1000);
+    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
+    if (delta >= STALE_MS){
       img.src = ERR_IMG;
       stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
       note.textContent = diag + "\n→ Affichage Erreur";
       return;
     }
+  } else {
+    diag += `age.txt indisponible (${a.why}) • tentative image`;
+  }
 
-    // 2) image OneDrive (no-store via blob)
-    const blobUrl = await fetchBlobUrl(src.img);
-    img.onload  = ()=>{ stamp.textContent = new Date().toLocaleString(); };
-    img.onerror = ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
-    img.src = blobUrl;
-  }catch(e){
-    diag += `age.txt indisponible (${e.message}) • fallback Erreur`;
-   ' img.src = ERR_IMG;
-     img.src = blobUrl;
+  // 2) Affiche l’image depuis SharePoint (auth STIB requise)
+  const ok = await showImage(imgUrl);
+  if (!ok){
+    // Si l’image échoue et que la dernière image OK est trop vieille → Erreur
+    if (!force && lastOk>0 && Date.now()-lastOk>=STALE_MS){
+      img.src = ERR_IMG;
+      diag += "\nimage KO → Erreur";
+    } else {
+      diag += "\nimage KO (êtes-vous connecté au tenant STIB ?)";
+    }
   }
   note.textContent = diag;
 }
