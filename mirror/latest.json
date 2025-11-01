@@ -1,0 +1,18 @@
+{
+    "updated_utc":  "2025-11-01T20:33:43.1645549Z",
+    "epoch_s":  1762029223,
+    "items":  {
+                  "eras":  {
+                               "url":  "https://Flo-App-bxl.github.io/TDID-Live/mirror/erasme_20251101T203343fffZ.png",
+                               "ts":  1762029223
+                           },
+                  "brel":  {
+                               "url":  "https://Flo-App-bxl.github.io/TDID-Live/mirror/brel_20251101T203343fffZ.png",
+                               "ts":  1762029223
+                           },
+                  "delta":  {
+                                "url":  "https://Flo-App-bxl.github.io/TDID-Live/mirror/delta_20251101T203343fffZ.png",
+                                "ts":  1762029223
+                            }
+              }
+}
