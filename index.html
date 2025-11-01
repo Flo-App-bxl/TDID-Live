@@ -16,6 +16,7 @@
   img{max-width:100%;max-height:100%;object-fit:contain}
   .stamp{margin-left:auto;opacity:.85;font-size:.9em}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line}
+  #loginBtn{display:none;position:fixed;top:72px;right:12px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#1a5bff;color:#fff;z-index:20}
 </style>
 </head>
 <body>
@@ -27,115 +28,155 @@
     <span class="stamp" id="stamp">—</span>
   </div>
 
+  <button id="loginBtn">Se connecter au compte STIB</button>
+
   <div class="wrap"><img id="view" alt="TDID Live"></div>
   <div class="note" id="note"></div>
 
 <script>
-/* ====== CONFIG SP ====== 
-   OneDrive pro perso (ton compte) */
-const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
-const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+/* =====================  CONFIG  ===================== */
+/* Remplace les 7 liens ci-dessous par TES URLs OneDrive :
+   -> utiliser les liens "download.aspx?SourceUrl=..." pour chaque fichier.
+   -> SP_SIGNIN_PAGE : une page SharePoint/OneDrive du dossier LiveMirror (pas download.aspx)
+*/
 
-/* Fabrique une URL brute (pas le viewer) */
-function spRaw(file){
-  const src = `${SP_FOLDER}/${file}`;
-  return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}`;
-}
+const SP_SIGNIN_PAGE =
+  "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fflorent_legrain_stib_brussels%2FDocuments%2FLiveMirror";
 
-/* Fichiers */
 const DATA = {
   brel:   { img: spRaw("live_brel.png"),   age: spRaw("live_brel.age.txt")   },
   delta:  { img: spRaw("live_delta.png"),  age: spRaw("live_delta.age.txt")  },
   erasme: { img: spRaw("live_erasme.png"), age: spRaw("live_erasme.age.txt") }
 };
-const ERR_IMG    = spRaw("TDID_Erreur.png");
+const ERR_IMG = "PASTE_LINK_TO_TDID_Erreur.png";
+
 const REFRESH_MS = 3000;      // 3 s
 const STALE_MS   = 120000;    // 2 min
-/* ======================= */
+/* ==================================================== */
 
-const img   = document.getElementById('view');
-const stamp = document.getElementById('stamp');
-const note  = document.getElementById('note');
-const btns  = {
-  brel:   document.getElementById('brel'),
-  delta:  document.getElementById('delta'),
-  erasme: document.getElementById('erasme')
-};
+const img    = document.getElementById('view');
+const stamp  = document.getElementById('stamp');
+const note   = document.getElementById('note');
+const btns   = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
+const loginBtn = document.getElementById('loginBtn');
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
 let lastOk = 0;
+let lastBlobUrl = null;
 
-function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
-for(const k in btns){
+function setActive(){
+  for (const k in btns) btns[k].classList.toggle('active', k===depot);
+}
+for (const k in btns){
   btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
 }
 setActive();
 
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-/* Parse robuste : retire BOM et tout sauf chiffres */
-function normalizeEpoch(raw){
-  if (raw == null) return null;
-  // retire BOM éventuel + spaces
-  let s = String(raw).replace(/^\uFEFF/, '').trim();
-  // si le fichier a été “contaminé”, on ne garde que les chiffres
-  if (!/^\d+$/.test(s)) s = s.replace(/[^\d]/g,'');
-  if (!s) return null;
-  let ms = Number(s);
-  if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;                 // secondes -> ms
-  const now = Date.now();
-  if (ms - now > 10*60*1000){                // futur improbable => corrige TZ locale
-    const offsetMin = new Date().getTimezoneOffset();
-    ms = ms - offsetMin*60000;
-  }
-  return ms;
+/* ---------- Auth helper (Option 1) ---------- */
+function openSigninTab(){ window.open(SP_SIGNIN_PAGE, '_blank', 'noopener'); }
+
+function promptSignin(message){
+  const msg = message || "Authentification requise";
+  note.textContent = (note.textContent ? note.textContent + "\n" : "") + msg;
+  loginBtn.style.display = 'inline-block';
+  loginBtn.onclick = () => { openSigninTab(); setTimeout(()=>tick(true), 3000); };
 }
 
+// fetch avec gestion 401/403 + cookies d’entreprise
+async function fetchNoStore(url){
+  let r;
+  try{
+    r = await fetch(url, { cache:'no-store', credentials:'include' });
+  }catch(e){
+    return { ok:false, status:0, text: async()=>"", blob: async()=>new Blob() };
+  }
+  if (r.status === 401 || r.status === 403){
+    // tente d’ouvrir la page de login + bouton manuel si popups bloquées
+    try { openSigninTab(); } catch(e){}
+    promptSignin("Veuillez vous connecter au compte STIB (un onglet s'est ouvert).");
+  }
+  return r;
+}
+
+/* ---------- Normalisation epoch ---------- */
+function normalizeEpoch(raw){
+  if (raw == null) return null;
+  let s = String(raw).replace(/^\uFEFF/, '').trim().replace(',', '.');
+  let n = Number.parseFloat(s);
+  if (!Number.isFinite(n)) return null;
+  if (n < 1e12) n = Math.round(n * 1000);   // secondes -> ms
+  else n = Math.round(n);                   // enlève décimales éventuelles
+  // garde-fou fuseau : si >10 min "dans le futur", corrige offset local
+  if (n - Date.now() > 10*60*1000){
+    const off = new Date().getTimezoneOffset();
+    n = n - off*60000;
+  }
+  return n;
+}
+
+/* ---------- Lecture age.txt ---------- */
 async function readAge(url){
   try{
-    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
+    const r = await fetchNoStore(cb(url));
     if(!r.ok) return {ms:null, why:'HTTP '+r.status};
-    const raw = await r.text();
+    const raw = (await r.text()).trim();
     const ms  = normalizeEpoch(raw);
     if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
     return {ms, why:null};
   }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
-function showImage(src){
+/* ---------- Chargement image anti-cache ---------- */
+async function showImage(src){
+  const r = await fetchNoStore(cb(src));
+  if(!r.ok){
+    stamp.textContent = "Image KO (connecté STIB ?) • " + new Date().toLocaleString();
+    return false;
+  }
+  const blob = await r.blob();
+  if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
+  const url = URL.createObjectURL(blob);
   return new Promise(resolve=>{
     img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); resolve(true); };
-    img.onerror = ()=>{ stamp.textContent = "Image KO (connecté STIB ?) • " + new Date().toLocaleString(); resolve(false); };
-    img.src = cb(src);
+    img.onerror = ()=>{ stamp.textContent = "Image KO • " + new Date().toLocaleString(); resolve(false); };
+    lastBlobUrl = url;
+    img.src = url;
   });
 }
 
+/* ---------- Boucle ---------- */
 async function tick(force=false){
   const {img:imgUrl, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  const a = await readAge(ageUrl);
-  if (a.ms !== null){
-    const delta = Date.now() - a.ms;
+  // 1) contrôle d’âge (prioritaire)
+  const info = await readAge(ageUrl);
+  if (info.ms !== null){
+    const delta = Date.now() - info.ms;
     const dSec  = Math.round(delta/1000);
     diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
     if (delta >= STALE_MS){
       img.src = ERR_IMG;
       stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
       note.textContent = diag + "\n→ Affichage Erreur";
+      loginBtn.style.display = 'none';
       return;
     }
   } else {
-    diag += `age.txt indisponible (${a.why}) • tentative image`;
+    diag += `age.txt indisponible (${info.why}) • tentative image`;
   }
 
+  // 2) image
   const ok = await showImage(imgUrl);
-  if (!ok && (lastOk>0 && Date.now()-lastOk>=STALE_MS)){
+  if (!ok && (force || (lastOk>0 && Date.now()-lastOk>=STALE_MS))){
     img.src = ERR_IMG;
     diag += "\nimage KO → Erreur";
   }
+
   note.textContent = diag;
+  if (ok) loginBtn.style.display = 'none';
 }
 
 setInterval(()=>tick(false), REFRESH_MS);
