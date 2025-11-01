@@ -6,6 +6,7 @@
 <title>TDID Live – Brel / Delta / Erasm.</title>
 <style>
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff}
+  *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   body{padding-top:64px}
   .top{position:fixed;top:0;left:0;right:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
@@ -31,94 +32,78 @@
   <div class="note" id="note"></div>
 
 <script>
-/* --- Config --- */
-const REPO = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
-const DATA = {
-  brel:   { img: REPO+"live_brel.png",   age: REPO+"live_brel.age.txt"   },
-  delta:  { img: REPO+"live_delta.png",  age: REPO+"live_delta.age.txt"  },
-  erasme: { img: REPO+"live_erasme.png", age: REPO+"live_erasme.age.txt" }
-};
-const ERR_IMG  = REPO+"TDID_Erreur.png";
-const REFRESH_MS = 3000;
-const STALE_MS   = 120000;
+/* -------- CONFIG --------
+   On lit un manifest JSON versionné par dépôt :
+   live_<depot>.json  =>  { "age": <epoch_ms_UTC>, "png": "live_<depot>.<AGE>.png" }
+   Les fichiers PNG/TXT "legacy" peuvent rester mais ne sont plus utilisés ici.
+*/
+const ROOT = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
+const DEPOTS = ["brel","delta","erasme"];
+const ERR_IMG = ROOT + "TDID_Erreur.png";  // mets l'image d'erreur dans le repo si besoin
+const REFRESH_MS = 3000;  // 3 s
+const STALE_MS   = 120000; // 2 min
 
 const img   = document.getElementById('view');
-const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-const btns  = {
-  brel:   document.getElementById('brel'),
-  delta:  document.getElementById('delta'),
-  erasme: document.getElementById('erasme')
-};
+const stamp = document.getElementById('stamp');
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
-let lastOk = 0;
-let lastBlobUrl = null;
-
-function setActive(){
-  for (const k in btns) btns[k].classList.toggle('active', k===depot);
+for (const d of DEPOTS) {
+  const el = document.getElementById(d);
+  el.onclick = () => { depot = d; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
 }
-for (const k in btns){
-  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
+function setActive(){
+  for (const d of DEPOTS) document.getElementById(d).classList.toggle('active', d===depot);
 }
 setActive();
 
-/* Convertit age.txt en UTC millisecondes */
-function normalizeEpoch(raw){
-  let n = Number(String(raw).trim());
-  if (!Number.isFinite(n)) return null;
-  if (n < 1e12) n *= 1000; // secondes → ms
-  // Si le timestamp semble "futur", on corrige d’un offset local
-  if (n - Date.now() > 600000) n -= new Date().getTimezoneOffset()*60000;
-  return n;
+async function fetchJSONNoCache(url){
+  const r = await fetch(url + "?t=" + Date.now(), {cache:"no-store"});
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json();
 }
-
-async function readAge(url){
-  try{
-    const r = await fetch(url+'?nocache='+Date.now(), {cache:'no-store'});
-    if (!r.ok) return {ms:null, why:'HTTP '+r.status};
-    const txt = (await r.text()).trim();
-    const ms = normalizeEpoch(txt);
-    return {ms, why:null};
-  }catch{ return {ms:null, why:'fetch'}; }
-}
-
 async function fetchImageNoCache(url){
-  try{
-    const r = await fetch(url+'?v='+Date.now(), {cache:'no-store'});
-    if (!r.ok) throw new Error('HTTP '+r.status);
-    const blob = await r.blob();
-    if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-    lastBlobUrl = URL.createObjectURL(blob);
-    return lastBlobUrl;
-  }catch{ return null; }
+  const r = await fetch(url + "?t=" + Date.now(), {cache:"no-store"});
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return URL.createObjectURL(await r.blob());
 }
 
 async function tick(force=false){
-  const {img:imgUrl, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  const {ms, why} = await readAge(ageUrl);
-  if (ms){
-    const deltaMs = Date.now() - ms;
-    const dSec = Math.round(deltaMs/1000);
-    diag += `age.txt OK • Δ=${dSec>=0?'+':''}${dSec}s → ${dSec>=120?'STALE':'OK'}`;
-    if (deltaMs>=STALE_MS){
+  try{
+    // 1) Lire le manifest versionné
+    const manUrl = ROOT + `live_${depot}.json`;
+    const man = await fetchJSONNoCache(manUrl);
+
+    const age = Number(man.age);
+    const png = String(man.png || "");
+
+    if (!Number.isFinite(age) || !png.endsWith(".png")) {
+      throw new Error("manifest invalide");
+    }
+
+    // 2) Contrôle d'âge
+    const dSec = Math.round((Date.now() - age) / 1000);
+    diag += `age(manifest) • Δ=${dSec >= 0 ? "+" : ""}${dSec}s → ${dSec >= 120 ? "STALE" : "OK"}`;
+    if (dSec * 1000 >= STALE_MS) {
       img.src = ERR_IMG;
-      stamp.textContent = "Hors Service (≥2 min) • "+new Date().toLocaleTimeString();
-      note.textContent = diag+"\n→ Affichage Erreur";
+      stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
+      note.textContent = diag + "\n→ Affichage Erreur";
       return;
     }
-  } else diag += `age.txt indisponible (${why})`;
 
-  const blobUrl = await fetchImageNoCache(imgUrl);
-  if (blobUrl){
+    // 3) Charger l'image pointée (nom unique ⇒ pas de cache)
+    const blobUrl = await fetchImageNoCache(ROOT + png);
+    img.onload  = () => { stamp.textContent = new Date().toLocaleString(); };
+    img.onerror = () => { stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
     img.src = blobUrl;
-    img.onload = ()=>{ lastOk=Date.now(); stamp.textContent = new Date().toLocaleTimeString(); };
-  } else if (!force && lastOk>0 && Date.now()-lastOk>STALE_MS){
+
+  } catch (e){
+    diag += `\nmanifest KO (${e.message}) → fallback Erreur`;
     img.src = ERR_IMG;
-    diag += "\nimage KO → Erreur";
   }
+
   note.textContent = diag;
 }
 
