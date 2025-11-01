@@ -108,7 +108,7 @@ async function tick(force=false){
     let dSec = Math.round((nowRef - info.ms)/1000);
     if (Math.abs(dSec) > 86400) dSec = Math.round((Date.now()-info.ms)/1000); // garde-fou 24h
 
-    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=STALE_SEC ? 'STALE' : 'OK'}`;
+    diag += `age.txt OK • Δ=${dSec}sec → ${dSec>=STALE_SEC ? 'STALE' : 'OK'}`;
 
     // 1a) trop vieux → écran erreur immédiat (à 120 s)
     if (dSec >= STALE_SEC){
