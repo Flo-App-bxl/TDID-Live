@@ -14,8 +14,8 @@
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
   .wrap{height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center}
   img{max-width:100%;max-height:100%;object-fit:contain}
-  .stamp{margin-left:auto;opacity:.9;font-size:.9em}
-  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
+  .stamp{margin-left:auto;opacity:.85;font-size:.9em}
+  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.9em;text-align:center;white-space:pre-line}
 </style>
 </head>
 <body>
@@ -31,171 +31,167 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ====== CONFIG SP (ton code d’origine) ====== */
+/* ====== CONFIG ====== */
+/* GitHub Pages: où sont stockées les images “miroir” */
+const GH_OWNER   = "Flo-App-bxl";
+const GH_REPO    = "TDID-Live";
+const GH_BRANCH  = "gh-pages";
+const GH_API_DIR = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/mirror?ref=${GH_BRANCH}`;
+const GH_RAW     = `https://${GH_OWNER}.github.io/${GH_REPO}/mirror`;
+
+/* SharePoint (si connecté STIB) pour les .age.txt et fallback image directe si voulu) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 function spRaw(file){
   const src = `${SP_FOLDER}/${file}`;
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}`;
 }
-const DATA_SP = {
-  brel:   { img: spRaw("live_brel.png")   },
-  delta:  { img: spRaw("live_delta.png")  },
-  erasme: { img: spRaw("live_erasme.png") }
+
+/* Fichiers d'âge côté SP */
+const SP_AGE = {
+  brel:   spRaw("live_brel.age.txt"),
+  delta:  spRaw("live_delta.age.txt"),
+  erasme: spRaw("live_erasme.age.txt")
 };
-const ERR_IMG_SP = spRaw("TDID_Erreur.png");
 
-/* ====== CONFIG MIROIR (GitHub Pages) ====== */
-const MIRROR_LATEST = "https://Flo-App-bxl.github.io/TDID-Live/mirror/latest.json";
-const MIRROR_KEY = { brel: "brel", delta: "delta", erasme: "eras" };
-
-/* Rafraîchissement & seuil (5 minutes) */
+const ERR_IMG    = spRaw("TDID_Erreur.png"); // ou héberge-la aussi dans /mirror si tu préfères
 const REFRESH_MS = 3000;      // 3 s
-const STALE_MS   = 300000;    // 5 min
+const STALE_MS   = 5 * 60 * 1000; // 5 minutes
+/* ===================== */
 
-/* ====== UI ====== */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
-const btns  = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
-
+const btns  = {
+  brel:   document.getElementById('brel'),
+  delta:  document.getElementById('delta'),
+  erasme: document.getElementById('erasme')
+};
 let depot = localStorage.getItem('tdid_depot') || 'brel';
-let lastBlobUrl = null;
-let lastTsSeen = { brel:0, delta:0, erasme:0 }; // pour garantir "dernier" miroir
-let lastSource = "—";
+let lastOk = 0;
 
 function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
-for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
+for(const k in btns){
+  btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
+}
 setActive();
 
-/* ====== Utils ====== */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-function setStampSource(srcLabel){
-  lastSource = srcLabel;
-  stamp.textContent = `${srcLabel} • ${new Date().toLocaleString()}`;
+/* Parse "brel_20251101T203843Z.png" -> epoch ms */
+function parseIsoName(name){
+  const m = name.match(/_(\d{8}T\d{6}Z)\.png$/i);
+  if(!m) return null;
+  const d = new Date(m[1]); // UTC
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : null;
 }
 
-/* HEAD rapide pour valider la présence de l’image miroir (anti-lag CDN) */
-async function headOk(url){
+/* Fetch liste mirror/ et retourne la meilleure image pour le dépôt */
+async function pickLatestFromMirror(depot){
+  const prefix = (depot==="erasme" ? "erasme_" : depot+"_");
+  const r = await fetch(GH_API_DIR, {cache:'no-store'});
+  if(!r.ok) throw new Error("GitHub API dir HTTP "+r.status);
+  const arr = await r.json();
+  const files = arr.filter(x => x.type==="file" && x.name.startsWith(prefix) && x.name.endsWith(".png"));
+  if(!files.length) return null;
+  // trier par nom décroissant (timestamp intégré)
+  files.sort((a,b)=> b.name.localeCompare(a.name));
+  const name = files[0].name;
+  const url  = `${GH_RAW}/${name}`;
+  const ms   = parseIsoName(name);
+  return {url, ms, name};
+}
+
+/* Lecture age SP si dispo (avec credentials) */
+async function readAgeSP(depot){
   try{
-    const r = await fetch(cb(url), { method:'HEAD', cache:'no-store' });
-    return r.ok;
-  }catch(e){ return false; }
+    const r = await fetch(cb(SP_AGE[depot]), {cache:'no-store', credentials:'include'});
+    if(!r.ok) return {ms:null, why:'HTTP '+r.status};
+    // robust: ne garder que les chiffres
+    let s = (await r.text()).replace(/^\uFEFF/, '').trim().replace(/[^\d]/g,'');
+    if(!s) return {ms:null, why:'parse'};
+    let ms = Number(s);
+    if(ms < 1e12) ms *= 1000;
+    return {ms, why:null};
+  }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
-/* Charge latest.json avec anti-cache fort et re-try pour s’assurer d’avoir le + récent.
-   - Réessaie jusqu’à 3x si (ts <= dernier ts vu) OU si HEAD de l’URL échoue. */
-async function loadMirrorLatestStrong(key){
-  let tries = 0, last = null;
-  while (tries < 3){
-    tries++;
-    try{
-      const r = await fetch(cb(MIRROR_LATEST), {cache:'no-store'});
-      if (!r.ok) { await new Promise(res=>setTimeout(res, 300)); continue; }
-      const j = await r.json();
-      const item = j?.items?.[key];
-      if (!item?.url || !Number.isFinite(item.ts)){ await new Promise(res=>setTimeout(res, 300)); continue; }
-
-      // si ts pas plus récent que déjà vu → on retente (CDN lag)
-      if (item.ts*1000 <= lastTsSeen[depot]){
-        await new Promise(res=>setTimeout(res, 300));
-        last = item; continue;
-      }
-
-      // Valide que l’image est vraiment dispo côté CDN
-      const ok = await headOk(item.url);
-      if (!ok){ await new Promise(res=>setTimeout(res, 300)); last = item; continue; }
-
-      // OK : on enregistre le ts et on renvoie
-      lastTsSeen[depot] = item.ts*1000;
-      return item;
-    }catch(e){
-      await new Promise(res=>setTimeout(res, 300));
-    }
-  }
-  // dernier recours : renvoyer le dernier lu (même s’il n’a pas passé toutes les vérifs)
-  return last;
-}
-
-/* Affiche une image SP (direct) */
-function showImageSP(src){
+/* Charge l'image et signale si OK */
+function showImage(src, sourceLabel){
   return new Promise(resolve=>{
-    img.onload  = ()=>{ setStampSource("SP"); resolve(true); };
-    img.onerror = ()=>{ setStampSource("SP (image KO)"); resolve(false); };
+    img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = `${sourceLabel} • ` + new Date().toLocaleString(); resolve(true); };
+    img.onerror = ()=>{ stamp.textContent = `Image KO (${sourceLabel}) • ` + new Date().toLocaleString(); resolve(false); };
     img.src = cb(src);
   });
 }
 
-/* Affiche une image miroir (blob, anti-cache) */
-async function showImageMirror(url){
-  try{
-    const r = await fetch(cb(url), {cache:'no-store'});
-    if (!r.ok) throw new Error('HTTP '+r.status);
-    const blob = await r.blob();
-    if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-    const u = URL.createObjectURL(blob);
-    lastBlobUrl = u;
-    return await new Promise(res=>{
-      img.onload  = ()=>{ setStampSource("Miroir"); res(true); };
-      img.onerror = ()=>{ setStampSource("Miroir (image KO)"); res(false); };
-      img.src = u;
-    });
-  }catch(e){ return false; }
-}
-
-/* ====== Boucle principale ====== */
 async function tick(force=false){
-  const key = MIRROR_KEY[depot];
-  const spImgUrl = DATA_SP[depot].img;
-  let diag = `Dépôt: ${depot}\n`;
+  let diag = `Depot: ${depot}\n`;
 
-  // 1) On lit TOUJOURS l’âge du miroir (même si SP est accessible)
-  const item = await loadMirrorLatestStrong(key);
-  if (!item || !item.url || !Number.isFinite(item.ts)){
-    // pas de miroir fiable → on tente quand même SP (mais sans contrôle d’âge)
-    diag += "Miroir indisponible → tentative SP (sans âge)";
-    const okSp = await showImageSP(spImgUrl);
-    if (!okSp){
-      img.src = ERR_IMG_SP;
-      setStampSource("Erreur (miroir & SP indisponibles)");
-      note.textContent = diag + "\n→ Erreur : sources indisponibles";
-    } else {
-      note.textContent = diag + "\nSP image OK (sans contrôle d’âge miroir)";
+  // 1) On essaie de récupérer l’âge depuis SP (si connecté)
+  let spAge = await readAgeSP(depot);
+  let ageMs = spAge.ms; // peut être null
+  if (ageMs !== null) {
+    const d = Date.now() - ageMs;
+    const dSec = Math.round(d/1000);
+    diag += `age(SP) OK • Δ=${dSec}s → ${d >= STALE_MS ? 'STALE' : 'OK'}\n`;
+    if (d >= STALE_MS){
+      await showImage(ERR_IMG, "Erreur");
+      note.textContent = diag + "→ Source: SP age • Motif: ancien (>5min)";
+      return;
     }
-    return;
-  }
-
-  const ageMs = Date.now() - (item.ts * 1000);
-  const ageSec = Math.round(ageMs/1000);
-  const stale = ageMs >= STALE_MS;
-  diag += `Miroir age(ts) • Δ=${ageSec}s → ${stale ? 'STALE' : 'OK'}`;
-
-  if (stale){
-    // Exigence : si le DERNIER MIRROR a ≥ 5 min, on affiche l’erreur
-    img.src = ERR_IMG_SP;
-    setStampSource("Erreur (miroir en retard)");
-    note.textContent = diag + "\n→ Erreur (origine : miroir en retard ≥ 5 min)";
-    return;
-  }
-
-  // 2) Choix de la source d’image : SP en priorité, sinon Miroir
-  // (on ne lit plus l’âge SP ; l’âge décisionnel est celui du miroir)
-  const okSp = await showImageSP(spImgUrl);
-  if (okSp){
-    note.textContent = diag + "\nSP image OK • source: SP";
-    return;
-  }
-
-  diag += "\nSP image KO → tentative Miroir";
-  const okMir = await showImageMirror(item.url);
-  if (okMir){
-    note.textContent = diag + "\nMiroir image OK • source: Miroir";
   } else {
-    img.src = ERR_IMG_SP;
-    setStampSource("Erreur (miroir KO)");
-    note.textContent = diag + "\n→ Erreur (origine : miroir indisponible)";
+    diag += `age(SP) indisponible (${spAge.why})\n`;
   }
+
+  // 2) Choisir la dernière image depuis le miroir GitHub (sans latest.json)
+  let pick = null;
+  try{
+    pick = await pickLatestFromMirror(depot);
+  }catch(e){
+    diag += `mirror listing KO (${e.message})\n`;
+  }
+
+  if (pick){
+    // si pas d’âge SP, on utilise l’horodatage du nom mirror
+    if (ageMs === null && pick.ms !== null){
+      const d = Date.now() - pick.ms;
+      const dSec = Math.round(d/1000);
+      diag += `age(mirror name) • Δ=${dSec}s → ${d >= STALE_MS ? 'STALE' : 'OK'}\n`;
+      if (d >= STALE_MS){
+        await showImage(ERR_IMG, "Erreur");
+        note.textContent = diag + "→ Source: mirror • Motif: ancien (>5min)";
+        return;
+      }
+    }
+    const ok = await showImage(pick.url, "Mirror");
+    if(!ok){
+      // tentative avec SP direct (image) si connecté
+      const spImg = spRaw(`live_${depot}.png`);
+      const ok2 = await showImage(spImg, "SP direct");
+      if(!ok2){
+        await showImage(ERR_IMG, "Erreur");
+        diag += "mirror KO + SP KO → Erreur\n";
+      } else {
+        diag += "mirror KO → SP direct OK\n";
+      }
+    } else {
+      diag += `Source image: mirror (${pick.name})\n`;
+    }
+  } else {
+    // aucun mirror → essai SP direct
+    const spImg = spRaw(`live_${depot}.png`);
+    const ok = await showImage(spImg, "SP direct");
+    if(!ok){
+      await showImage(ERR_IMG, "Erreur");
+      diag += "mirror vide + SP KO → Erreur\n";
+    } else {
+      diag += "mirror vide → SP direct OK\n";
+    }
+  }
+
+  note.textContent = diag.trim();
 }
 
 setInterval(()=>tick(false), REFRESH_MS);
