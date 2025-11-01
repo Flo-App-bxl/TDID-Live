@@ -31,25 +31,27 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ===================== CONFIG ===================== */
-/* Images PROTÉGÉES (SharePoint) – liens internes organisation + &download=1 */
-const IMG = {
-  brel:   "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?e=7HOG3k&download=1",
-  delta:  "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?e=yVvePu&download=1",
-  erasme: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EVlkXRiU6mRMuYfkn0Z2JwkBJ1SWQbK0ytMxOHvKQv8LRA?e=wWgCKu&download=1"
+/* ====== CONFIG SP ====== 
+   OneDrive pro perso (ton compte) */
+const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
+const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+
+/* Fabrique une URL brute (pas le viewer) */
+function spRaw(file){
+  const src = `${SP_FOLDER}/${file}`;
+  return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}`;
+}
+
+/* Fichiers */
+const DATA = {
+  brel:   { img: spRaw("live_brel.png"),   age: spRaw("live_brel.age.txt")   },
+  delta:  { img: spRaw("live_delta.png"),  age: spRaw("live_delta.age.txt")  },
+  erasme: { img: spRaw("live_erasme.png"), age: spRaw("live_erasme.age.txt") }
 };
-/* Âges PUBLICS (raw.githubusercontent.com) – CORS OK */
-const AGE = {
-  brel:   "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/live_brel.age.txt",
-  delta:  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/live_delta.age.txt",
-  erasme: "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/live_erasme.age.txt"
-};
-/* Image d’erreur (publique) – peut rester sur GitHub Pages */
-const ERR_IMG    = "https://flo-app-bxl.github.io/TDID-Live/TDID_Erreur.png";
-/* Rafraîchissement et seuil d’obsolescence */
+const ERR_IMG    = spRaw("TDID_Erreur.png");
 const REFRESH_MS = 3000;      // 3 s
 const STALE_MS   = 120000;    // 2 min
-/* ================================================== */
+/* ======================= */
 
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
@@ -63,64 +65,60 @@ const btns  = {
 let depot = localStorage.getItem('tdid_depot') || 'brel';
 let lastOk = 0;
 
-function setActive(){
-  for(const k in btns){ btns[k].classList.toggle('active', k===depot); }
-}
+function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
 for(const k in btns){
   btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
 }
 setActive();
 
-/* Ajoute un cache-buster */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 
-/* Normalise un epoch (ms) :
-   - si en secondes => *1000
-   - si future de >10 min (cas rare d’époque locale) => corrige avec offset TZ */
+/* Parse robuste : retire BOM et tout sauf chiffres */
 function normalizeEpoch(raw){
-  let ms = Number(String(raw).trim());
+  if (raw == null) return null;
+  // retire BOM éventuel + spaces
+  let s = String(raw).replace(/^\uFEFF/, '').trim();
+  // si le fichier a été “contaminé”, on ne garde que les chiffres
+  if (!/^\d+$/.test(s)) s = s.replace(/[^\d]/g,'');
+  if (!s) return null;
+  let ms = Number(s);
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;            // secondes -> ms
+  if (ms < 1e12) ms *= 1000;                 // secondes -> ms
   const now = Date.now();
-  if (ms - now > 10*60*1000){           // trop dans le futur -> corrige
-    const offsetMin = new Date().getTimezoneOffset(); // minutes
-    ms = ms - offsetMin*60000;          // UTC = local - offset
+  if (ms - now > 10*60*1000){                // futur improbable => corrige TZ locale
+    const offsetMin = new Date().getTimezoneOffset();
+    ms = ms - offsetMin*60000;
   }
   return ms;
 }
 
-/* Lit age.txt (sur raw.githubusercontent.com) */
 async function readAge(url){
   try{
-    const r = await fetch(cb(url), {cache:'no-store'});
+    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
     if(!r.ok) return {ms:null, why:'HTTP '+r.status};
-    const raw = (await r.text()).trim();
+    const raw = await r.text();
     const ms  = normalizeEpoch(raw);
     if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
     return {ms, why:null};
   }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
-/* Charge l’image en posant directement src (pas de fetch → pas de CORS),
-   avec cache-buster pour éviter les caches SharePoint/CDN */
 function showImage(src){
   return new Promise(resolve=>{
     img.onload  = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); resolve(true); };
-    img.onerror = ()=>{ stamp.textContent = "Image non disponible • " + new Date().toLocaleString(); resolve(false); };
+    img.onerror = ()=>{ stamp.textContent = "Image KO (connecté STIB ?) • " + new Date().toLocaleString(); resolve(false); };
     img.src = cb(src);
   });
 }
 
 async function tick(force=false){
-  const imgUrl = IMG[depot];
-  const ageUrl = AGE[depot];
+  const {img:imgUrl, age:ageUrl} = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) Contrôle d’âge (prioritaire)
   const a = await readAge(ageUrl);
   if (a.ms !== null){
-    let delta = Date.now() - a.ms;           // ms écoulés depuis la capture
-    const dSec = Math.round(delta/1000);
+    const delta = Date.now() - a.ms;
+    const dSec  = Math.round(delta/1000);
     diag += `age.txt OK • Δ=${dSec}s → ${dSec>=120 ? 'STALE' : 'OK'}`;
     if (delta >= STALE_MS){
       img.src = ERR_IMG;
@@ -132,16 +130,10 @@ async function tick(force=false){
     diag += `age.txt indisponible (${a.why}) • tentative image`;
   }
 
-  // 2) Affiche l’image depuis SharePoint (auth STIB requise)
   const ok = await showImage(imgUrl);
-  if (!ok){
-    // Si l’image échoue et que la dernière image OK est trop vieille → Erreur
-    if (!force && lastOk>0 && Date.now()-lastOk>=STALE_MS){
-      img.src = ERR_IMG;
-      diag += "\nimage KO → Erreur";
-    } else {
-      diag += "\nimage KO (êtes-vous connecté au tenant STIB ?)";
-    }
+  if (!ok && (lastOk>0 && Date.now()-lastOk>=STALE_MS)){
+    img.src = ERR_IMG;
+    diag += "\nimage KO → Erreur";
   }
   note.textContent = diag;
 }
