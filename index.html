@@ -57,6 +57,14 @@ const MIRROR_LATEST = {
   erasme: "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/time_erasme/latest.json"
 };
 
+/* ====== Dossiers miroirs dédiés ====== */
+const GH_RAW_BASE = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main";
+const MIRROR_DIR = {
+  brel:   "mirror_brel",
+  delta:  "mirror_delta",
+  erasme: "mirror_erasme"
+};
+
 const REFRESH_MS = 3000;
 const STALE_MS   = 10 * 60 * 1000; // 10 min
 
@@ -107,14 +115,26 @@ async function readAgeSP(url){
   }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
+/* Charge latest.json. Si "url" est absent, reconstruit depuis MIRROR_DIR + file */
 async function loadLatest(depotKey){
   try{
     const r = await fetch(cb(MIRROR_LATEST[depotKey]), {cache:'no-store'});
     if(!r.ok) return null;
     const j = await r.json();
     const it = j?.items?.[depotKey];
-    if (!it?.url || !Number.isFinite(it.ts)) return null;
-    return { url: it.url, ts: it.ts*1000, updated: j.updated_iso || null };
+    if (!it) return null;
+
+    let file = it.file || "";
+    let url  = it.url;
+    if (!url){
+      // si le JSON ne fournit pas d'URL, on reconstruit avec le dossier miroir dédié
+      const fname = file ? file.split('/').pop() : "";
+      if (!fname) return null;
+      url = `${GH_RAW_BASE}/${MIRROR_DIR[depotKey]}/${fname}`;
+    }
+    if (!Number.isFinite(it.ts)) return null;
+
+    return { url, ts: it.ts*1000, updated: j.updated_iso || null };
   }catch(e){ return null; }
 }
 
@@ -143,11 +163,11 @@ async function tick(force=false){
   const sp = DATA_SP[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) on lit d'abord le manifeste miroir (décision d'âge)
+  // 1) lire latest.json (décision d'âge)
   const latest = await loadLatest(depot);
   if (!latest){
     diag += "latest.json indisponible (fetch)";
-    // SP sans âge miroir => on tente SP puis erreur si KO
+    // SP sans âge miroir → on tente SP puis erreur si KO
     const okSP = await preload(sp.img, true);
     if (okSP){
       await renderFrom(sp.img, {status:'ok', text:'SP'});
@@ -170,7 +190,7 @@ async function tick(force=false){
     return;
   }
 
-  // 2) miroir est "frais" -> SP prioritaire SI accessible
+  // 2) miroir frais → SP prioritaire SI accessible (test invisible -> pas de clignotement)
   const spOK = await preload(sp.img, true);
   if (spOK){
     await renderFrom(sp.img, {status:'ok', text:'SP'});
@@ -178,7 +198,7 @@ async function tick(force=false){
     return;
   }
 
-  // 3) sinon miroir RAW
+  // 3) sinon miroir (dans son dossier dédié via latest/url)
   const mirOK = await preload(latest.url, false);
   if (mirOK){
     await renderFrom(latest.url, {status:'warn', text:'Miroir'});
