@@ -48,7 +48,7 @@ const DATA_SP = {
   delta:  { img: spRaw("live_delta.png"),  age: spRaw("live_delta.age.txt")  },
   erasme: { img: spRaw("live_erasme.png"), age: spRaw("live_erasme.age.txt") }
 };
-const ERR_IMG_SP = spRaw("TDID_Erreur.png");
+
 
 /* ====== Manifests RAW (branche main) par dépôt ====== */
 const MIRROR_LATEST = {
@@ -64,7 +64,7 @@ const MIRROR_DIR = {
   delta:  "mirror_delta",
   erasme: "mirror_erasme"
 };
-
+const ERR_IMG_SP = GH_RAW_BASE("TDID_Erreur.png");
 const REFRESH_MS = 3000;
 const STALE_MS   = 10 * 60 * 1000; // 10 min
 
