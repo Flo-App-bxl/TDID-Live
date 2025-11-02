@@ -19,8 +19,6 @@
   .wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.9em;text-align:center;white-space:pre-line;max-width:92vw}
-
-  /* Bandeau centre 70% opacité, texte défilant, 2x hauteur */
   .banner{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     background:rgba(242,182,54,0.7);color:#000;padding:16px 24px;border-radius:14px;
@@ -43,7 +41,6 @@
     </div>
   </div>
 
-  <!-- Bandeau FR + NL-BE -->
   <div class="banner" id="banner">
     <span>Refresh + de 10min - contrôler fiabilité via cellule ‘Last Refresh’ • Refresh +10 min – controleer betrouwbaarheid via cel ‘Last Refresh’</span>
   </div>
@@ -68,10 +65,10 @@ const LATEST_URL = {
 };
 
 const ERR_IMG    = `${GH_RAW}/TDID_Erreur.png`;
-const REFRESH_MS = 6000;              // UI toutes les 6 s
+const REFRESH_MS = 6000;              // UI 6s
 const FETCH_MIN  = 60*1000;           // 1 vrai fetch/min
-const STALE_MS   = 10*60*1000;        // 10 min → bandeau / erreur
-const CACHE_MIRROR_TTL = 60*1000;     // 60 s de grâce pour miroir local
+const STALE_MS   = 10*60*1000;        // 10 min
+const CACHE_MIRROR_TTL = 60*1000;     // 60 s de grâce pour miroir KO
 
 /* SharePoint (prioritaire) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
@@ -98,10 +95,10 @@ setActive();
 
 /* ====== État ====== */
 let latestData = { brel:null, delta:null, erasme:null };     // {ts,url}
-let lastFetchAt = { brel:0, delta:0, erasme:0 };             // ms
-let lastHttp    = { brel:'', delta:'', erasme:'' };          // trace textes
+let lastFetchAt = { brel:0, delta:0, erasme:0 };
+let lastHttp    = { brel:'', delta:'', erasme:'' };
 let lastMirror  = { brel:null, delta:null, erasme:null };    // {url,timeLoaded}
-let lastSource  = { brel:'-', delta:'-', erasme:'-' };       // RAW/RAW2/CDN/API
+let lastSource  = { brel:'-', delta:'-', erasme:'-' };       // RAW/CDN/API/RAW2
 let forceFetch  = true;
 
 /* ====== Helpers ====== */
@@ -113,7 +110,7 @@ function preload(src, withCred=false){
     const t=new Image();
     if (withCred) t.referrerPolicy='no-referrer-when-downgrade';
     t.onload=()=>res(true); t.onerror=()=>res(false);
-    t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); // anti-cache pour test d’existence
+    t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now();
   });
 }
 function renderFrom(src, statusLabel, exact=false){
@@ -125,7 +122,7 @@ function renderFrom(src, statusLabel, exact=false){
   });
 }
 
-/* ====== Fetch latest.json : RAW → RAW2 → CDN → API ====== */
+/* ====== Fetch latest.json : RAW → CDN → API → RAW2 ====== */
 async function fetchLatest(depotKey){
   const now = Date.now();
   if (!forceFetch && now - lastFetchAt[depotKey] < FETCH_MIN && latestData[depotKey]) {
@@ -136,10 +133,11 @@ async function fetchLatest(depotKey){
              : depotKey==='delta'? '/time_delta/latest.json'
              :                      '/time_erasme/latest.json';
 
-  const urlRAW1 = cbMinute(GH_RAW + path);               // RAW strict
-  const urlRAW2 = cbMinute(GH_RAW + path);               // RAW “propre”
-  const urlCDN  = cbMinute(`${JSDELIVR}${path}`);        // jsDelivr
-  const urlAPI  = `${GH_API}${path}?ref=${GH_BRANCH}`;   // API GitHub
+  const urlRAW  = cbMinute(GH_RAW + path);                 // anti-cache, le plus frais
+  const urlCDN1 = cbMinute(`${JSDELIVR}${path}`);          // jsDelivr essai #1
+  const urlCDN2 = cbMinute(`${JSDELIVR}${path}`);          // jsDelivr essai #2 (options diff)
+  const urlAPI  = `${GH_API}${path}?ref=${GH_BRANCH}`;     // GitHub API (secours)
+  const urlRAW2 = cbMinute(GH_RAW + path);                 // RAW “propre” en dernier
 
   let trace = [];
   let source = '-';
@@ -157,32 +155,32 @@ async function fetchLatest(depotKey){
     }
   }
 
-  // 1) RAW #1 : no-store + headers stricts
-  let j = await tryJson(urlRAW1, {
+  // 1) RAW strict (no-store)
+  let j = await tryJson(urlRAW, {
     cache:'no-store',
     mode:'cors',
     referrerPolicy:'no-referrer',
     headers:{'Cache-Control':'no-store, no-cache'}
   }, 'RAW');
 
-  // 2) RAW #2 : sans headers stricts (contourne certains edges)
+  // 2) CDN jsDelivr – essai #1 (no-referrer)
   if (!j){
-    j = await tryJson(urlRAW2, {
-      cache:'no-store',
-      mode:'cors'
-    }, 'RAW2');
-  }
-
-  // 3) CDN jsDelivr
-  if (!j){
-    j = await tryJson(urlCDN, {
+    j = await tryJson(urlCDN1, {
       cache:'no-store',
       mode:'cors',
       referrerPolicy:'no-referrer'
     }, 'CDN');
   }
 
-  // 4) API GitHub (lim 60/h)
+  // 2bis) CDN jsDelivr – essai #2 (referrer par défaut)
+  if (!j){
+    j = await tryJson(urlCDN2, {
+      cache:'no-store',
+      mode:'cors'
+    }, 'CDN2');
+  }
+
+  // 3) API GitHub (limite 60/h)
   if (!j){
     j = await tryJson(urlAPI, {
       cache:'no-store',
@@ -190,6 +188,14 @@ async function fetchLatest(depotKey){
       referrerPolicy:'no-referrer',
       headers:{'Accept':'application/vnd.github.v3.raw'}
     }, 'API');
+  }
+
+  // 4) RAW2 “propre” (potentiellement cache)
+  if (!j){
+    j = await tryJson(urlRAW2, {
+      cache:'no-store',
+      mode:'cors'
+    }, 'RAW2');
   }
 
   lastFetchAt[depotKey] = now;
@@ -219,7 +225,7 @@ async function tick(){
   const k = depot;
   let diag = `Depot: ${k}\n`;
 
-  // 1) Lire latest.json
+  // Lire latest.json
   let latest = null;
   try{
     latest = await fetchLatest(k);
@@ -230,12 +236,12 @@ async function tick(){
     return;
   }
 
-  // 2) Âge simple
+  // Âge simple
   const ageMs  = Date.now() - latest.ts;
   const ageSec = Math.round(ageMs/1000);
   const tooOld = ageMs >= STALE_MS;
 
-  // 3) SP prioritaire
+  // SP prioritaire
   const sp = DATA_SP[k];
   const spOK = await preload(sp.img, true);
 
@@ -249,7 +255,7 @@ async function tick(){
     return;
   }
 
-  // 4) SP KO : si données >10min -> ERREUR
+  // SP KO + âge >10 min -> ERREUR directe
   if (tooOld){
     await renderFrom(ERR_IMG, {status:'err', text:'Erreur (données >10min)'});
     diag += `HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
@@ -258,7 +264,7 @@ async function tick(){
     return;
   }
 
-  // 5) Données récentes : tenter le miroir exact
+  // Données récentes : tenter le miroir exact
   const okMir = await renderFrom(latest.url, {status:'warn', text:'Miroir (horodaté)'}, true);
   if (okMir){
     lastMirror[k] = { url: latest.url, timeLoaded: Date.now() };
@@ -268,7 +274,7 @@ async function tick(){
     return;
   }
 
-  // 6) Miroir KO : si cache ≤60s, l'afficher ; sinon ERREUR
+  // Miroir KO : si cache ≤60s, on l'affiche ; sinon ERREUR
   const cached = lastMirror[k];
   if (cached && (Date.now() - cached.timeLoaded) <= CACHE_MIRROR_TTL){
     await renderFrom(cached.url, {status:'warn', text:'Miroir cache (≤60s)'}, true);
