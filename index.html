@@ -38,7 +38,7 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ====== SharePoint (chemins de ton OneDrive pro) ====== */
+/* ====== SharePoint (chemins OneDrive pro) ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
@@ -49,22 +49,17 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png"), age: spRaw("live_erasme.age.txt") }
 };
 
+/* ====== Repo GitHub (API côté client, anti-cache) ====== */
+const GH_USER  = "Flo-App-bxl";
+const GH_REPO  = "TDID-Live";
+const GH_BRANCH= "main";
+const API_BASE = "https://api.github.com";
+const GH_RAW_BASE = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
 
-/* ====== Manifests RAW (branche main) par dépôt ====== */
-const MIRROR_LATEST = {
-  brel:   "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/time_brel/latest.json",
-  delta:  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/time_delta/latest.json",
-  erasme: "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/time_erasme/latest.json"
-};
-
-/* ====== Dossiers miroirs dédiés ====== */
-const GH_RAW_BASE = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main";
-const MIRROR_DIR = {
-  brel:   "mirror_brel",
-  delta:  "mirror_delta",
-  erasme: "mirror_erasme"
-};
+/* Dossiers miroirs dédiés */
+const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
 const ERR_IMG_SP = `${GH_RAW_BASE}/TDID_Erreur.png`;
+
 const REFRESH_MS = 3000;
 const STALE_MS   = 10 * 60 * 1000; // 10 min
 
@@ -87,7 +82,7 @@ function setTop(status, label){
   stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
 }
 
-/* --- utils --- */
+/* --- utils SP (si jamais tu t'en sers) --- */
 function normalizeEpoch(raw){
   if (raw == null) return null;
   let s = String(raw).replace(/^\uFEFF/,'').trim();
@@ -95,9 +90,9 @@ function normalizeEpoch(raw){
   if (!s) return null;
   let ms = Number(s);
   if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;
+  if (ms < 1e12) ms *= 1000;           // seconds -> ms
   const now = Date.now();
-  if (ms - now > 10*60*1000){
+  if (ms - now > 10*60*1000){          // futur improbable -> corrige si fichier en localtime
     const offsetMin = new Date().getTimezoneOffset();
     ms = ms - offsetMin*60000;
   }
@@ -115,27 +110,44 @@ async function readAgeSP(url){
   }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
-/* Charge latest.json. Si "url" est absent, reconstruit depuis MIRROR_DIR + file */
+/* ====== latest.json via API GitHub (HEAD SHA -> contents?ref=SHA) ====== */
 async function loadLatest(depotKey){
   try{
-    const r = await fetch(cb(MIRROR_LATEST[depotKey]), {cache:'no-store'});
-    if(!r.ok) return null;
-    const j = await r.json();
+    // 1) SHA du HEAD (jamais mis en cache CDN)
+    const refUrl = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`;
+    const refRes = await fetch(cb(refUrl), {cache:'no-store', headers:{'Accept':'application/vnd.github+json'}});
+    if (!refRes.ok) return null;
+    const ref = await refRes.json();
+    const headSha = ref?.object?.sha;
+    if (!headSha) return null;
+
+    // 2) Contenu de latest.json à ce SHA précis (base64)
+    const latestPath = `time_${depotKey}/latest.json`;
+    const contUrl = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/contents/${latestPath}?ref=${headSha}`;
+    const cRes = await fetch(cb(contUrl), {cache:'no-store', headers:{'Accept':'application/vnd.github+json'}});
+    if (!cRes.ok) return null;
+    const c = await cRes.json();
+    if (!c?.content) return null;
+
+    const txt = atob(c.content.replace(/\s/g,''));
+    const j = JSON.parse(txt);
+
     const it = j?.items?.[depotKey];
     if (!it) return null;
 
-    let file = it.file || "";
-    let url  = it.url;
+    // Si le JSON n'a pas d'URL (il devrait), reconstruit à partir du mirror dédié
+    let url = it.url;
     if (!url){
-      // si le JSON ne fournit pas d'URL, on reconstruit avec le dossier miroir dédié
-      const fname = file ? file.split('/').pop() : "";
+      const fname = (it.file||'').split('/').pop();
       if (!fname) return null;
       url = `${GH_RAW_BASE}/${MIRROR_DIR[depotKey]}/${fname}`;
     }
     if (!Number.isFinite(it.ts)) return null;
 
     return { url, ts: it.ts*1000, updated: j.updated_iso || null };
-  }catch(e){ return null; }
+  }catch(e){
+    return null;
+  }
 }
 
 /* pré-charge sans remplacer l’image affichée (évite le flicker) */
@@ -163,11 +175,10 @@ async function tick(force=false){
   const sp = DATA_SP[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) lire latest.json (décision d'âge)
+  // 1) lire latest.json (anti-cache)
   const latest = await loadLatest(depot);
   if (!latest){
-    diag += "latest.json indisponible (fetch)";
-    // SP sans âge miroir → on tente SP puis erreur si KO
+    diag += "latest.json indisponible (API)";
     const okSP = await preload(sp.img, true);
     if (okSP){
       await renderFrom(sp.img, {status:'ok', text:'SP'});
@@ -190,7 +201,7 @@ async function tick(force=false){
     return;
   }
 
-  // 2) miroir frais → SP prioritaire SI accessible (test invisible -> pas de clignotement)
+  // 2) SP prioritaire si accessible
   const spOK = await preload(sp.img, true);
   if (spOK){
     await renderFrom(sp.img, {status:'ok', text:'SP'});
@@ -198,7 +209,7 @@ async function tick(force=false){
     return;
   }
 
-  // 3) sinon miroir (dans son dossier dédié via latest/url)
+  // 3) sinon miroir
   const mirOK = await preload(latest.url, false);
   if (mirOK){
     await renderFrom(latest.url, {status:'warn', text:'Miroir'});
