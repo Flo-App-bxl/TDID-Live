@@ -19,6 +19,10 @@
   .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
   .stamp{opacity:.9;font-size:.9em}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
+
+  /* === Bandeau alerte "Refresh +10min" === */
+  .banner{position:fixed;top:64px;left:0;right:0;background:var(--warn);color:#000;
+          padding:8px 12px;text-align:center;font-weight:600;z-index:9;display:none}
 </style>
 </head>
 <body>
@@ -31,6 +35,12 @@
       <span id="led" class="dot"></span>
       <span class="stamp" id="stamp">—</span>
     </div>
+  </div>
+
+  <!-- Bandeau FR + NL-BE (caché par défaut) -->
+  <div class="banner" id="banner">
+    Refresh + de 10min - contrôler fiabilité via cellule ‘Last Refresh’ •
+    Refresh +10 min – controleer betrouwbaarheid via cel ‘Last Refresh’
   </div>
 
   <div class="wrap"><img id="view" alt="TDID Live"></div>
@@ -70,6 +80,7 @@ const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
 const led   = document.getElementById('led');
+const banner= document.getElementById('banner'); // <-- bandeau
 const btns  = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
@@ -85,6 +96,7 @@ function setTop(status, label){
 }
 function saveLocal(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 function readLocal(key){ try{ return JSON.parse(localStorage.getItem(key)||"null"); } catch{ return null; } }
+function showBanner(show){ banner.style.display = show ? 'block' : 'none'; }
 
 function preload(src, withCred=false){
   return new Promise(res=>{
@@ -152,9 +164,11 @@ async function tick(force=false){
     if (okSP){
       await renderFrom(sp.img, {status:'ok', text:'SP'});
       note.textContent = diag + `\nsource: SP (RAW indisponible)`;
+      showBanner(false); // pas la condition "âge > 10 min"
     } else {
       await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
       note.textContent = diag + `\n→ Erreur : pas de miroir et SP KO`;
+      showBanner(false);
     }
     return;
   }
@@ -178,9 +192,11 @@ async function tick(force=false){
     if (okSP){
       await renderFrom(sp.img, {status:'err', text:'SP (miroir ≥10min)'});
       note.textContent = diag + `\nsource: SP`;
+      showBanner(true); // <<-- afficher le bandeau FR+NL quand SP et âge >10 min
     } else {
       await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
       note.textContent = diag + `\n→ Erreur (miroir en retard & SP KO)`;
+      showBanner(false);
     }
     return;
   }
@@ -193,6 +209,7 @@ async function tick(force=false){
   if (spOK){
     await renderFrom(sp.img, {status:'ok', text:'SP'});
     note.textContent = diag + `\nsource: SP`;
+    showBanner(false); // âge ≤10 min → pas de bandeau
     return;
   }
 
@@ -205,6 +222,7 @@ async function tick(force=false){
     await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
     note.textContent = diag + `\n→ Erreur (miroir & SP KO)`;
   }
+  showBanner(false);
 }
 
 setInterval(()=>tick(false), REFRESH_MS);
