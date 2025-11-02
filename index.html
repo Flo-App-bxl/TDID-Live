@@ -20,9 +20,35 @@
   .stamp{opacity:.9;font-size:.9em}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
 
-  /* === Bandeau alerte "Refresh +10min" === */
-  .banner{position:fixed;top:64px;left:0;right:0;background:var(--warn);color:#000;
-          padding:8px 12px;text-align:center;font-weight:600;z-index:9;display:none}
+  /* === Bandeau défilant "Refresh +10min" === */
+  .banner{
+    position:fixed;
+    top:64px;
+    left:50%;
+    transform:translateX(-50%);
+    background:rgba(242,182,54,0.7); /* var(--warn) avec 70% opacité */
+    color:#000;
+    padding:6px 14px;
+    border-radius:8px;
+    font-weight:600;
+    z-index:9;
+    display:none;
+    overflow:hidden;
+    white-space:nowrap;
+    width:80vw;
+    text-align:center;
+  }
+
+  .banner span{
+    display:inline-block;
+    padding-left:100%;
+    animation:scrollText 15s linear infinite;
+  }
+
+  @keyframes scrollText{
+    0%{transform:translateX(0);}
+    100%{transform:translateX(-100%);}
+  }
 </style>
 </head>
 <body>
@@ -39,8 +65,7 @@
 
   <!-- Bandeau FR + NL-BE (caché par défaut) -->
   <div class="banner" id="banner">
-    Refresh + de 10min - contrôler fiabilité via cellule ‘Last Refresh’ •
-    Refresh +10 min – controleer betrouwbaarheid via cel ‘Last Refresh’
+    <span>Refresh + de 10min - contrôler fiabilité via cellule ‘Last Refresh’ • Refresh +10 min – controleer betrouwbaarheid via cel ‘Last Refresh’</span>
   </div>
 
   <div class="wrap"><img id="view" alt="TDID Live"></div>
@@ -144,27 +169,18 @@ async function tick(force=false){
   let diag = `Depot: ${depot}\n`;
   let latest = null;
 
-  // essai strict RAW (anti-cache via cb)
-  try{
-    latest = await readLatestRaw(depot);
-  }catch(e){
-    diag += `latest.json RAW KO (${e.message})`;
-  }
+  try{ latest = await readLatestRaw(depot); }
+  catch(e){ diag += `latest.json RAW KO (${e.message})`; }
 
-  // si on a une valeur crado, tente de retomber sur le dernier bon known-good
-  const lastGood = readLocal(key(depot)); // {ts,url}
-  if (!latest && lastGood){
-    latest = lastGood;
-    diag += `\n→ fallback cache local`;
-  }
+  const lastGood = readLocal(key(depot));
+  if (!latest && lastGood){ latest = lastGood; diag += `\n→ fallback cache local`; }
 
   if (!latest){
-    // rien de fiable → SP sinon erreur
     const okSP = await preload(sp.img, true);
     if (okSP){
       await renderFrom(sp.img, {status:'ok', text:'SP'});
       note.textContent = diag + `\nsource: SP (RAW indisponible)`;
-      showBanner(false); // pas la condition "âge > 10 min"
+      showBanner(false);
     } else {
       await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
       note.textContent = diag + `\n→ Erreur : pas de miroir et SP KO`;
@@ -173,26 +189,22 @@ async function tick(force=false){
     return;
   }
 
-  // contrôle d’âge strict
   const ageMs = Date.now() - latest.ts;
   const ageSec = Math.round(ageMs/1000);
   const tooOld = ageMs >= STALE_MS;
 
-  // règle des ±5 s : si la nouvelle lecture n'est pas suffisamment différente, on garde l'ancienne
   if (lastGood && Math.abs(latest.ts - lastGood.ts) <= JITTER_OK){
-    latest = lastGood;
-    diag += `\nΔ<=5s → conserve la version précédente`;
+    latest = lastGood; diag += `\nΔ<=5s → conserve la version précédente`;
   }
 
   diag += `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}`;
 
   if (tooOld){
-    // trop vieux → on préfère SP/Erreur
     const okSP = await preload(sp.img, true);
     if (okSP){
       await renderFrom(sp.img, {status:'err', text:'SP (miroir ≥10min)'});
       note.textContent = diag + `\nsource: SP`;
-      showBanner(true); // <<-- afficher le bandeau FR+NL quand SP et âge >10 min
+      showBanner(true);
     } else {
       await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
       note.textContent = diag + `\n→ Erreur (miroir en retard & SP KO)`;
@@ -201,19 +213,16 @@ async function tick(force=false){
     return;
   }
 
-  // si on arrive ici : latest est frais → on l'enregistre comme known-good
   saveLocal(key(depot), latest);
 
-  // SP prioritaire si dispo
   const spOK = await preload(sp.img, true);
   if (spOK){
     await renderFrom(sp.img, {status:'ok', text:'SP'});
     note.textContent = diag + `\nsource: SP`;
-    showBanner(false); // âge ≤10 min → pas de bandeau
+    showBanner(false);
     return;
   }
 
-  // sinon miroir (image du RAW)
   const mirOK = await preload(latest.url);
   if (mirOK){
     await renderFrom(latest.url, {status:'warn', text:'Miroir'});
