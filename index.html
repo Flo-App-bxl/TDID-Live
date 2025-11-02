@@ -236,12 +236,21 @@ async function tick(){
     return;
   }
 
-  // 4) Sinon, miroir horodaté exact
+  // 4) Sinon, miroir horodaté exact ou erreur si trop vieux
+if (tooOld) {
+  // Données trop anciennes -> écran erreur direct
+  await renderFrom(ERR_IMG, {status:'err', text:'Erreur (données >10min)'});
+  showBanner(false);
+  diag += `HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
+          `age(miroir) • Δ=${ageSec}s → STALE\nsource: Miroir (trop ancien)\n→ Erreur affichée`;
+  note.textContent = diag;
+} else {
+  // Données récentes -> affichage miroir
   const okMir = await renderFrom(latest.url, {status:'warn', text:'Miroir (horodaté)'}, true);
   if (okMir){
-    showBanner(false); // bandeau réservé au cas SP+>10min
+    showBanner(false);
     diag += `HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
-            `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: Miroir`;
+            `age(miroir) • Δ=${ageSec}s → OK\nsource: Miroir`;
     note.textContent = diag;
   } else {
     await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
