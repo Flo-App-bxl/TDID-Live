@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TDID Live – Simple</title>
+<title>TDID Live – Simple + Cache miroir 60s</title>
 <style>
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -20,7 +20,6 @@
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.9em;text-align:center;white-space:pre-line;max-width:92vw}
 
-  /* Bandeau centre 70% opacité, texte défilant, 2x hauteur */
   .banner{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     background:rgba(242,182,54,0.7);color:#000;padding:16px 24px;border-radius:14px;
@@ -43,7 +42,6 @@
     </div>
   </div>
 
-  <!-- Bandeau FR + NL-BE -->
   <div class="banner" id="banner">
     <span>Refresh + de 10min - contrôler fiabilité via cellule ‘Last Refresh’ • Refresh +10 min – controleer betrouwbaarheid via cel ‘Last Refresh’</span>
   </div>
@@ -68,9 +66,10 @@ const LATEST_URL = {
 };
 
 const ERR_IMG    = `${GH_RAW}/TDID_Erreur.png`;
-const REFRESH_MS = 6000;              // UI 6 s
-const FETCH_MIN  = 60*1000;           // 1 vrai fetch/min
-const STALE_MS   = 10*60*1000;        // 10 min → bandeau si SP OK
+const REFRESH_MS = 6000;              
+const FETCH_MIN  = 60*1000;           
+const STALE_MS   = 10*60*1000;        
+const CACHE_MIRROR_TTL = 60*1000;     // 60s pour miroir local
 
 /* SharePoint (prioritaire) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
@@ -82,7 +81,7 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png") }
 };
 
-/* ====== UI refs ====== */
+/* ====== UI ====== */
 const img   = document.getElementById('view');
 const note  = document.getElementById('note');
 const led   = document.getElementById('led');
@@ -96,9 +95,10 @@ for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('t
 setActive();
 
 /* ====== État ====== */
-let latestData = { brel:null, delta:null, erasme:null }; // {ts,url}
+let latestData = { brel:null, delta:null, erasme:null };
 let lastFetchAt = { brel:0, delta:0, erasme:0 };
 let lastHttp    = { brel:'', delta:'', erasme:'' };
+let lastMirror  = { brel:null, delta:null, erasme:null }; // {url,timeLoaded}
 let forceFetch  = true;
 
 /* ====== Helpers ====== */
@@ -110,7 +110,7 @@ function preload(src, withCred=false){
     const t=new Image();
     if (withCred) t.referrerPolicy='no-referrer-when-downgrade';
     t.onload=()=>res(true); t.onerror=()=>res(false);
-    t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); // anti-cache test existence
+    t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now();
   });
 }
 function renderFrom(src, statusLabel, exact=false){
@@ -122,147 +122,88 @@ function renderFrom(src, statusLabel, exact=false){
   });
 }
 
-/* ====== Fetch latest.json : RAW → jsDelivr → GitHub API ====== */
+/* ====== Fetch latest.json ====== */
 async function fetchLatest(depotKey){
   const now = Date.now();
-  if (!forceFetch && now - lastFetchAt[depotKey] < FETCH_MIN && latestData[depotKey]) {
-    return latestData[depotKey];
-  }
-
-  const path = depotKey==='brel' ? '/time_brel/latest.json'
-             : depotKey==='delta'? '/time_delta/latest.json'
-             :                      '/time_erasme/latest.json';
-
+  if (!forceFetch && now - lastFetchAt[depotKey] < FETCH_MIN && latestData[depotKey]) return latestData[depotKey];
+  const path = depotKey==='brel'?'/time_brel/latest.json':depotKey==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
   const urlRAW = cbMinute(GH_RAW + path);
   const urlCDN = cbMinute(`${JSDELIVR}${path}`);
-  const urlAPI = `${GH_API}${path}?ref=${GH_BRANCH}`; // API GitHub (on demande RAW via Accept)
-
+  const urlAPI = `${GH_API}${path}?ref=${GH_BRANCH}`;
   let trace = [];
-
-  async function tryFetch(url, opt, tag){
+  async function tryFetch(url,opt,tag){
     try{
-      const r = await fetch(url, opt);
-      trace.push(`${tag}:${r.status}`);
-      if(!r.ok) return null;
-      const j = await r.json(); // API renvoie RAW si Accept: v3.raw
-      return j;
-    }catch(e){
-      trace.push(`${tag}:fail`);
-      return null;
-    }
+      const r=await fetch(url,opt); trace.push(`${tag}:${r.status}`); if(!r.ok)return null; return await r.json();
+    }catch(e){ trace.push(`${tag}:fail`); return null; }
   }
-
-  // 1) RAW GitHub (no-store + bypass minute)
-  let j = await tryFetch(urlRAW, {
-    cache:'no-store',
-    mode:'cors',
-    referrerPolicy:'no-referrer',
-    headers:{'Cache-Control':'no-store, no-cache'}
-  }, 'RAW');
-
-  // 2) jsDelivr (CDN)
-  if(!j){
-    j = await tryFetch(urlCDN, {
-      cache:'no-store',
-      mode:'cors',
-      referrerPolicy:'no-referrer',
-      headers:{'Cache-Control':'no-store, no-cache'}
-    }, 'CDN');
-  }
-
-  // 3) GitHub Contents API (sans token)
-  if(!j){
-    j = await tryFetch(urlAPI, {
-      cache:'no-store',
-      mode:'cors',
-      referrerPolicy:'no-referrer',
-      headers:{'Accept':'application/vnd.github.v3.raw'}
-    }, 'API');
-  }
-
-  lastFetchAt[depotKey] = now;
-  lastHttp[depotKey]    = trace.join(' ');
-
+  let j = await tryFetch(urlRAW,{cache:'no-store',mode:'cors',referrerPolicy:'no-referrer',headers:{'Cache-Control':'no-store, no-cache'}},'RAW');
+  if(!j) j = await tryFetch(urlCDN,{cache:'no-store',mode:'cors',referrerPolicy:'no-referrer',headers:{'Cache-Control':'no-store, no-cache'}},'CDN');
+  if(!j) j = await tryFetch(urlAPI,{cache:'no-store',mode:'cors',referrerPolicy:'no-referrer',headers:{'Accept':'application/vnd.github.v3.raw'}},'API');
+  lastFetchAt[depotKey]=now; lastHttp[depotKey]=trace.join(' ');
   if(!j) throw new Error('all fetch attempts failed');
-
-  const it = j?.items?.[depotKey];
-  if (!it?.ts) throw new Error('bad json');
-
-  let imgUrl = it.url;
-  if (!imgUrl){
-    const f = (it.file||'').split('/').pop();
-    if (!f) throw new Error('no file');
-    imgUrl = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
-  }
-
-  latestData[depotKey] = { ts: Number(it.ts)*1000, url: imgUrl };
-  forceFetch = false;
-  return latestData[depotKey];
+  const it=j?.items?.[depotKey]; if(!it?.ts) throw new Error('bad json');
+  let imgUrl=it.url; if(!imgUrl){const f=(it.file||'').split('/').pop();if(!f)throw new Error('no file');imgUrl=`${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;}
+  latestData[depotKey]={ts:Number(it.ts)*1000,url:imgUrl}; forceFetch=false; return latestData[depotKey];
 }
 
 /* ====== Tick (UI) ====== */
 async function tick(){
-  showBanner(false); // reset à chaque cycle
-  const k = depot;
-  let diag = `Depot: ${k}\n`;
+  showBanner(false);
+  const k=depot; let diag=`Depot: ${k}\n`;
 
-  // 1) Lire latest.json
-  let latest = null;
-  try{
-    latest = await fetchLatest(k);
-  }catch(e){
-    await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
-    diag += `latest.json KO (${lastHttp[k] || e.message})\n→ Pas de données`;
-    note.textContent = diag;
+  let latest=null;
+  try{ latest=await fetchLatest(k); }
+  catch(e){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); diag+=`latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`; note.textContent=diag; return; }
+
+  const ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000), tooOld=ageMs>=STALE_MS;
+
+  const sp=DATA_SP[k]; const spOK=await preload(sp.img,true);
+
+  // SP prioritaire
+  if(spOK){
+    await renderFrom(sp.img,{status:tooOld?'err':'ok',text:'SP'});
+    showBanner(tooOld);
+    setTop(tooOld?'err':'ok',tooOld?'SP (miroir ≥10min)':'SP');
+    diag+=`HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
+          `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP`;
+    note.textContent=diag;
     return;
   }
 
-  // 2) Calcul d'âge (simple)
-  const ageMs  = Date.now() - latest.ts;
-  const ageSec = Math.round(ageMs/1000);
-  const tooOld = ageMs >= STALE_MS;
-
-  // 3) SP prioritaire si dispo
-  const sp = DATA_SP[k];
-  const spOK = await preload(sp.img, true);
-
-  if (spOK){
-    await renderFrom(sp.img, {status: tooOld?'err':'ok', text:'SP'});
-    if (tooOld) showBanner(true); else showBanner(false);
-    setTop(tooOld?'err':'ok', tooOld?'SP (miroir ≥10min)':'SP');
-    diag += `HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
-            `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP`;
-    note.textContent = diag;
+  // Si SP KO + données trop vieilles -> erreur directe
+  if(tooOld){
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (données >10min)'});
+    diag+=`HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
+          `age(miroir) • Δ=${ageSec}s → STALE\nsource: Miroir indisponible/ancien\n→ Erreur affichée`;
+    note.textContent=diag;
     return;
   }
 
-  // 4) SP KO → si âge > 10 min => ERREUR, sinon miroir horodaté exact
-  if (tooOld) {
-    await renderFrom(ERR_IMG, {status:'err', text:'Erreur (données >10min)'});
-    showBanner(false);
-    diag += `HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
-            `age(miroir) • Δ=${ageSec}s → STALE\nsource: Miroir indisponible/ancien\n→ Erreur affichée`;
-    note.textContent = diag;
+  // Sinon, afficher le miroir horodaté ou cache local si KO
+  const okMir = await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true);
+  if(okMir){
+    lastMirror[k]={url:latest.url,timeLoaded:Date.now()};
+    diag+=`HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
+          `age(miroir) • Δ=${ageSec}s → OK\nsource: Miroir`;
+    note.textContent=diag;
     return;
   }
 
-  // données récentes -> miroir
-  const okMir = await renderFrom(latest.url, {status:'warn', text:'Miroir (horodaté)'}, true);
-  if (okMir){
-    showBanner(false); // bandeau réservé au cas SP+>10min
-    diag += `HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
-            `age(miroir) • Δ=${ageSec}s → OK\nsource: Miroir`;
-    note.textContent = diag;
+  // si miroir KO, tenter le cache de <60s
+  const cached=lastMirror[k];
+  if(cached && (Date.now()-cached.timeLoaded)<=CACHE_MIRROR_TTL){
+    await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
+    diag+=`→ Miroir actuel KO, affichage cache ≤60s`;
+    note.textContent=diag;
   } else {
-    await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
-    showBanner(false);
-    diag += `→ Erreur (miroir KO)`;
-    note.textContent = diag;
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'});
+    diag+=`→ Erreur : miroir KO et cache expiré`;
+    note.textContent=diag;
   }
 }
 
 /* ====== Démarrage ====== */
-setInterval(tick, REFRESH_MS);
+setInterval(tick,REFRESH_MS);
 tick();
 </script>
 </body>
