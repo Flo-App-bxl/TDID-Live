@@ -36,27 +36,27 @@
 
 <script>
 /* ====== CONFIG ====== */
-/* SharePoint (ton OneDrive Pro) */
+/* SP (OneDrive Pro) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
 
-/* Miroir GitHub Pages : latest.json produit par le PS1 */
+/* Miroir Pages : latest.json généré par PS1 */
 const MIRROR_LATEST = "https://flo-app-bxl.github.io/TDID-Live/time/latest.json";
 
-/* Image erreur (hébergée sur BRANCHE MAIN) */
+/* Image d’erreur (sur main/) */
 const ERR_IMG_MAIN = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/TDID_Erreur.png";
 
 /* Dépôts */
 const DATA = {
-  brel:   { spImg: spRaw("live_brel.png"),   spAge: spRaw("live_brel.age.txt"),   mirrorKey: "brel"  },
-  delta:  { spImg: spRaw("live_delta.png"),  spAge: spRaw("live_delta.age.txt"),  mirrorKey: "delta" },
-  erasme: { spImg: spRaw("live_erasme.png"), spAge: spRaw("live_erasme.age.txt"), mirrorKey: "eras"  }
+  brel:   { spImg: spRaw("live_brel.png"),   mirrorKey: "brel"  },
+  delta:  { spImg: spRaw("live_delta.png"),  mirrorKey: "delta" },
+  erasme: { spImg: spRaw("live_erasme.png"), mirrorKey: "eras"  }
 };
 
 /* Rafraîchissement & seuil (5 min) */
 const REFRESH_MS = 3000;
-const STALE_MS   = 5 * 60 * 1000; // 5 min
+const STALE_MS   = 5 * 60 * 1000;
 
 /* ====== UI refs ====== */
 const img   = document.getElementById('view');
@@ -72,39 +72,9 @@ setActive();
 
 /* ====== Utils ====== */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
+function setLed(c){ led.className = "light " + c; }
+function setStamp(s){ stamp.textContent = `${s} • ${new Date().toLocaleString()}`; }
 
-function setLed(color){ led.className = "light " + color; }
-function setStamp(sourceLabel){ stamp.textContent = `${sourceLabel} • ${new Date().toLocaleString()}`; }
-
-/* Parse robuste de l'epoch stocké dans *.age.txt (SP) */
-function normalizeEpoch(raw){
-  if (raw == null) return null;
-  let s = String(raw).replace(/^\uFEFF/,'').trim();
-  if (!/^\d+$/.test(s)) s = s.replace(/[^\d]/g,'');
-  if (!s) return null;
-  let ms = Number(s);
-  if (ms < 1e12) ms *= 1000;        // secondes -> ms
-  const now = Date.now();
-  if (ms - now > 10*60*1000){       // garde-fou = correction TZ locale
-    const offsetMin = new Date().getTimezoneOffset();
-    ms = ms - offsetMin*60000;
-  }
-  return ms;
-}
-
-/* Lecture de l'âge SP */
-async function readAgeSP(url){
-  try{
-    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
-    if(!r.ok) return {ms:null, why:'HTTP '+r.status};
-    const raw = await r.text();
-    const ms  = normalizeEpoch(raw);
-    if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
-    return {ms, why:null};
-  }catch(e){ return {ms:null, why:'fetch'}; }
-}
-
-/* Lecture du latest.json (miroir) */
 async function readLatestJSON(){
   try{
     const r = await fetch(cb(MIRROR_LATEST), {cache:'no-store'});
@@ -114,62 +84,62 @@ async function readLatestJSON(){
   }catch(e){ return {ok:false, why:'fetch'}; }
 }
 
-function show(src, srcLabel, ledColor){
+function show(src, label, color){
   return new Promise(res=>{
-    img.onload  = ()=>{ setLed(ledColor); setStamp(srcLabel); res(true); };
-    img.onerror = ()=>{ setLed('r');      setStamp(srcLabel+' KO'); res(false); };
+    img.onload  = ()=>{ setLed(color); setStamp(label); res(true); };
+    img.onerror = ()=>{ setLed('r');      setStamp(label+' KO'); res(false); };
     img.src = cb(src);
   });
 }
 
-/* ====== BOUCLE ====== */
+/* ====== Logique demandée ======
+   1) Lire MIRROR latest.json
+      - si age miroir > 5 min => ERREUR (peu importe SP)
+      - si latest indispo => on affiche SP (sans garde-fou)
+      - si age miroir ≤ 5 min => afficher SP (prioritaire), sinon miroir
+*/
 async function tick(force=false){
   const cfg = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  /* 1) Essayer SP (âge + image) */
-  const age = await readAgeSP(cfg.spAge);
-  if (age.ms !== null){
-    const delta = Date.now() - age.ms;
-    const dSec  = Math.round(delta/1000);
-    const stale = delta >= STALE_MS;
-    diag += `age(SP) OK • Δ=${dSec}s → ${stale?'STALE':'OK'}`;
-
-    if (!stale){
-      const okSp = await show(cfg.spImg, "SP", "g");
-      if (okSp){ note.textContent = diag + "\nsource: SP"; return; }
-      // SP image KO : on tombera sur le miroir plus bas
-      diag += "\nSP image KO → fallback miroir";
-    } else {
-      // SP en retard : on tombera sur le miroir plus bas
-      diag += "\nSP en retard (≥5 min) → fallback miroir";
-    }
-  } else {
-    diag += `age(SP) indisponible (${age.why}) → fallback miroir`;
-  }
-
-  /* 2) Miroir : lire latest.json (URL + ts) */
+  // 1) Miroir d’abord
   const latest = await readLatestJSON();
   if (!latest.ok || !latest.data?.items?.[cfg.mirrorKey]){
-    // rien de fiable côté miroir → erreur
-    await show(ERR_IMG_MAIN, "Erreur (miroir indisponible)", "r");
-    note.textContent = diag + `\nlatest.json indisponible (${latest.why ?? 'inconnu'})\n→ Erreur (origine : miroir indisponible)`;
+    // Pas de garde-fou dispo → on montre SP quand même
+    diag += `latest.json indisponible (${latest.why ?? 'inconnu'}) → SP sans contrôle d’âge miroir`;
+    const okSp = await show(cfg.spImg, "SP", "g");
+    if (okSp){
+      note.textContent = diag + "\nsource: SP";
+    } else {
+      await show(ERR_IMG_MAIN, "Erreur (SP KO & miroir indispo)", "r");
+      note.textContent = diag + "\n→ Erreur (origine : miroir indispo + image SP KO)";
+    }
     return;
   }
-  const it = latest.data.items[cfg.mirrorKey]; // {url, ts, file}
+
+  const it = latest.data.items[cfg.mirrorKey]; // { url, ts, file? }
   const tsMs   = Number(it.ts) * 1000;
   const deltaM = Date.now() - tsMs;
   const dSecM  = Math.round(deltaM/1000);
   const staleM = deltaM >= STALE_MS;
-  diag += `\nage(miroir) OK • Δ=${dSecM}s → ${staleM?'STALE':'OK'}`;
+  diag += `age(miroir) • Δ=${dSecM}s → ${staleM ? 'STALE' : 'OK'}`;
 
   if (staleM){
+    // Garde-fou : miroir en retard → erreur systématique
     await show(ERR_IMG_MAIN, "Erreur (miroir ≥5 min)", "r");
-    note.textContent = diag + "\n→ Erreur (origine : miroir en retard)";
+    note.textContent = diag + "\n→ Erreur (origine : miroir en retard ≥ 5 min)";
     return;
   }
 
-  // Afficher l’image miroir (anti-cache par cb())
+  // 2) Miroir frais → SP prioritaire
+  const okSp = await show(cfg.spImg, "SP", "g");
+  if (okSp){
+    note.textContent = diag + "\nsource: SP (miroir frais)";
+    return;
+  }
+
+  // 3) SP KO → bascule miroir
+  diag += "\nSP image KO → bascule miroir";
   const okMir = await show(it.url, "Miroir", "y");
   if (okMir){
     note.textContent = diag + "\nsource: Miroir";
