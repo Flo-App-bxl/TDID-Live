@@ -31,7 +31,7 @@
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
 
-  /* Splash vidéo */
+  /* Splash vidéo (bloque l'affichage jusqu'à la fin) */
   .splash{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);
@@ -102,15 +102,24 @@ const REFRESH_MS=6000;          // boucle UI
 const FETCH_MIN=60000;          // 1 vrai fetch/min
 const STALE_MS=10*60*1000;      // 10 min
 const CACHE_MIRROR_TTL=60*1000; // miroir cache local 60 s
-const STARTUP_MAX_MS=10000;     // délai max splash (10 s)
+const STARTUP_MAX_MS=10000;     // timeout sécurité splash (si vidéo ne démarre pas)
 
-/* SharePoint (prioritaire) */
+/* ===== SharePoint (prioritaire) – URLs anti-cache “dur” ===== */
 const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
-const spRaw=f=>`${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER+"/"+f)}`;
-const DATA_SP={brel:{img:spRaw("live_brel.png")},delta:{img:spRaw("live_delta.png")},erasme:{img:spRaw("live_erasme.png")}};
+/* ajoute ?v=ts DANS SourceUrl + &t=ts après download.aspx */
+function spFresh(fileName){
+  const now=Date.now();
+  const encoded=encodeURIComponent(`${SP_FOLDER}/${fileName}?v=${now}`);
+  return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encoded}&t=${now}`;
+}
+function spUrlFor(depotKey){
+  if(depotKey==='brel')  return spFresh('live_brel.png');
+  if(depotKey==='delta') return spFresh('live_delta.png');
+  return spFresh('live_erasme.png');
+}
 
-/* UI refs */
+/* ===== UI refs ===== */
 const img=document.getElementById('view'), note=document.getElementById('note'),
       led=document.getElementById('led'), stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
@@ -124,21 +133,26 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* State */
+/* ===== State ===== */
 let latestData={},lastFetchAt={},lastHttp={},lastMirror={},lastSource={},forceFetch=true;
 for(const k of ['brel','delta','erasme']){latestData[k]=null;lastFetchAt[k]=0;lastHttp[k]='';lastMirror[k]=null;lastSource[k]='-';}
 let splashActive=true; let splashTimeoutId=setTimeout(()=>endSplash('timeout'),STARTUP_MAX_MS);
 
+/* ===== Helpers ===== */
 const cbMinute=u=>u+(u.includes('?')?'&':'?')+'x_bypass='+Math.floor(Date.now()/60000);
 function setTop(status,label){led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleString()}`;}
 function showBanner(s){banner.style.display=s?'block':'none';}
 function showSplash(on){splash.style.display=on?'flex':'none';splashActive=on;}
 function endSplash(reason){ if(!splashActive) return; showSplash(false); try{ splashVid.pause(); }catch{}; note.textContent=(note.textContent?note.textContent+'\n':'')+`splash end: ${reason}`; }
-if (splashVid){ splashVid.play().catch(()=>{}); splashVid.addEventListener('playing',()=>{ const fb=splash.querySelector('.fallback'); if(fb) fb.style.display='none'; }); splashVid.addEventListener('ended',()=>endSplash('ended')); }
+if (splashVid){
+  splashVid.play().catch(()=>{ /* silence iOS */ });
+  splashVid.addEventListener('playing',()=>{ const fb=splash.querySelector('.fallback'); if(fb) fb.style.display='none'; });
+  splashVid.addEventListener('ended',()=>endSplash('ended')); // <<< n’enlève le splash qu’à la fin
+}
 if (skipBtn){ skipBtn.addEventListener('click',()=>endSplash('skip')); }
 
 function preload(src,cred=false){return new Promise(res=>{const t=new Image(); if(cred)t.referrerPolicy='no-referrer-when-downgrade'; t.onload=()=>res(true); t.onerror=()=>res(false); t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
-function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text); if(splashActive) endSplash('first-frame'); res(true);};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false);};t.src=exact?src:(src+(src.includes('?')?'&':'?')+'t='+Date.now());});}
+function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text);res(true);};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false);};t.src=exact?src:(src+(src.includes('?')?'&':'?')+'t='+Date.now());});}
 
 /* ===== Fetch latest.json : RAW → CDN → API → RAW2 ===== */
 async function fetchLatest(depotKey, forceAPI=false){
@@ -180,7 +194,12 @@ async function tick(){
   const k=depot; let diag=`Depot: ${k}\n`;
   let latest=null;
   try{ latest=await fetchLatest(k); }
-  catch(e){ if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); } diag+=`latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`; note.textContent=diag; return; }
+  catch(e){ 
+    // Pendant le splash, on ne montre pas l'erreur (elle sera derrière)
+    if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); }
+    note.textContent=`${diag}latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;
+    return;
+  }
 
   // âge simple
   let ageMs=Date.now()-latest.ts; let ageSec=Math.round(ageMs/1000); const tooOld=ageMs>=STALE_MS;
@@ -191,22 +210,25 @@ async function tick(){
     try{ latest=await fetchLatest(k,true); ageMs=Date.now()-latest.ts; ageSec=Math.round(ageMs/1000); }catch{ diag+=`API force failed\n`; }
   }
 
-  // SP prioritaire
-  const sp=DATA_SP[k]; const spOK=await preload(sp.img,true);
+  // SP prioritaire (URL SP fraîche à chaque tick)
+  const spUrl=spUrlFor(k);
+  const spOK=await preload(spUrl,true);
   if(spOK){
-    await renderFrom(sp.img,{status:tooOld?'err':'ok',text:'SP'});
+    await renderFrom(spUrl,{status:tooOld?'err':'ok',text:'SP'});
     showBanner(tooOld);
     diag+=`HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
           `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP`;
-    note.textContent=diag; return;
+    note.textContent=diag; 
+    return;
   }
 
-  // SP KO + trop vieux => erreur (mais pas pendant le splash-timeout)
+  // SP KO + trop vieux => erreur (affichée derrière le splash tant qu'il n'est pas fini)
   if(tooOld){
     if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur (données >10min)'}); }
     diag+=`HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
           `age(miroir) • Δ=${ageSec}s → STALE\nsource: KO\n→ Erreur affichée`;
-    note.textContent=diag; return;
+    note.textContent=diag; 
+    return;
   }
 
   // Données récentes -> miroir exact
@@ -215,26 +237,24 @@ async function tick(){
     lastMirror[k]={url:latest.url,timeLoaded:Date.now()};
     diag+=`HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
           `age(miroir) • Δ=${ageSec}s → OK\nsource: Miroir`;
-    note.textContent=diag; return;
+    note.textContent=diag; 
+    return;
   }
 
-  // Miroir KO : montrer cache ≤60s sinon erreur (hors splash)
+  // Miroir KO : montrer cache ≤60s sinon erreur
   const cached=lastMirror[k];
   if(cached && (Date.now()-cached.timeLoaded)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
-    diag+=`→ Miroir KO, affichage cache ≤60s`; note.textContent=diag; return;
+    diag+=`→ Miroir KO, affichage cache ≤60s`; note.textContent=diag; 
+  } else {
+    if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'}); }
+    diag+=`→ Erreur : miroir KO et cache expiré`; note.textContent=diag;
   }
-
-  if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'}); }
-  diag+=`→ Erreur : miroir KO et cache expiré`; note.textContent=diag;
 }
 
 /* ===== Démarrage ===== */
 setInterval(tick,REFRESH_MS);
 tick();
-
-/* Fermer le splash si déjà une image s'affiche, ou après timeout */
-function maybeCloseSplashSoon(){ if(!splashActive) return; /* laissé pour extensions futures */ }
 </script>
 </body>
 </html>
