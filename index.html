@@ -92,7 +92,7 @@ const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
 /* ====== Timers ====== */
 const REFRESH_MS = 6000;           // 6 s (UI)
 const STALE_MS   = 10*60*1000;     // 10 min
-const JITTER_OK  = 0;         // règle des ±5 s > 5*1000
+const JITTER_OK  = 5*1000;         // règle des ±5 s
 
 /* ====== Throttle latest.json ====== */
 const LATEST_MIN_INTERVAL = 60*1000; // 60 s max 1 appel
@@ -126,7 +126,9 @@ for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('t
 setActive();
 
 /* ====== helpers ====== */
-const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
+const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now(); // anti-cache "chaque requête" (images)
+const cbMinute = u => u + (u.includes('?')?'&':'?') + 't=' + Math.floor(Date.now()/60000); // anti-cache "par minute" (latest.json)
+
 function setTop(status, label){
   led.className = 'dot ' + (status==='ok'?'ok':status==='warn'?'warn':'err');
   stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
@@ -156,8 +158,15 @@ async function renderFrom(src, statusLabel){
 /* ====== lecture latest.json (RAW uniquement) ====== */
 function key(depot){ return `tdid_last_good_${depot}`; } // {ts,url}
 async function readLatestRaw(depotKey){
-  const url = cb(LATEST_URL[depotKey]);
-  const r   = await fetch(url, {cache:'no-store'});
+  const url = cbMinute(LATEST_URL[depotKey]); // cache-buster par minute pour forcer 1 vrai hit/min
+  const r   = await fetch(url, {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    }
+  });
   if (!r.ok) throw new Error('HTTP '+r.status);
   const j = await r.json();
   const it = j?.items?.[depotKey];
@@ -193,7 +202,7 @@ async function tick(force=false){
   let diag = `Depot: ${depot}\n`;
   let latest = null;
 
-  // essai strict RAW (anti-cache via cb) mais throttlé
+  // essai strict RAW (anti-cache par minute) mais throttlé
   try{
     latest = await readLatestThrottled(depot, force);
   }catch(e){
@@ -274,8 +283,11 @@ async function tick(force=false){
   showBanner(false);
 }
 
+/* ====== Boucle + Events visibilité (force fetch au retour focus) ====== */
 setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
+window.addEventListener('visibilitychange', () => { if (!document.hidden) tick(true); });
+window.addEventListener('focus', () => tick(true));
 </script>
 </body>
 </html>
