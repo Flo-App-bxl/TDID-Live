@@ -5,21 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TDID Live – Brel / Delta / Erasm.</title>
 <style>
-  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#22c55e;--err:#ef4444}
+  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   body{padding-top:64px}
   .top{position:fixed;top:0;left:0;right:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
   .brand{font-weight:700;margin-right:8px}
   .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer}
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
-  .badges{display:flex;gap:6px;margin-left:auto;align-items:center;font-size:.85em;opacity:.95}
-  .chip{padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--card)}
-  .ok{border-color:var(--ok);color:var(--ok)}
-  .err{border-color:var(--err);color:var(--err)}
-  .stamp{margin-left:8px;opacity:.9}
   .wrap{height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center}
   img{max-width:100%;max-height:100%;object-fit:contain}
-  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
+  .stamp{margin-left:auto;opacity:.95;font-size:.9em;display:flex;align-items:center;gap:.5rem}
+  .light{width:.7rem;height:.7rem;border-radius:50%;display:inline-block;box-shadow:0 0 0 2px #0003 inset, 0 0 6px 1px #0005}
+  .g{background:#22c55e;box-shadow:0 0 0 2px #0003 inset, 0 0 10px 2px #22c55e}
+  .y{background:#eab308;box-shadow:0 0 0 2px #0003 inset, 0 0 10px 2px #eab308}
+  .r{background:#ef4444;box-shadow:0 0 0 2px #0003 inset, 0 0 10px 2px #ef4444}
+  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
 </style>
 </head>
 <body>
@@ -28,75 +28,158 @@
     <button class="btn" id="brel">Brel</button>
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
-    <div class="badges">
-      <span id="srcChip" class="chip">—</span>
-      <span id="stamp" class="stamp">—</span>
-    </div>
+    <span class="stamp"><span id="led" class="light r"></span><span id="stamp">—</span></span>
   </div>
 
   <div class="wrap"><img id="view" alt="TDID Live"></div>
   <div class="note" id="note"></div>
 
 <script>
-/* ====== SharePoint (prioritaire) ====== */
+/* ====== CONFIG ====== */
+/* SharePoint (ton OneDrive Pro) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
 
-/* ====== Miroir : alias stables ====== */
-const MIRROR = {
-  brel:   "https://flo-app-bxl.github.io/TDID-Live/mirror/brel.png",
-  delta:  "https://flo-app-bxl.github.io/TDID-Live/mirror/delta.png",
-  erasme: "https://flo-app-bxl.github.io/TDID-Live/mirror/erasme.png"
-};
+/* Miroir GitHub Pages : latest.json produit par le PS1 */
+const MIRROR_LATEST = "https://flo-app-bxl.github.io/TDID-Live/time/latest.json";
 
+/* Image erreur (hébergée sur BRANCHE MAIN) */
+const ERR_IMG_MAIN = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/TDID_Erreur.png";
+
+/* Dépôts */
 const DATA = {
-  brel:   { spImg: spRaw("live_brel.png"),   mirror: MIRROR.brel   },
-  delta:  { spImg: spRaw("live_delta.png"),  mirror: MIRROR.delta  },
-  erasme: { spImg: spRaw("live_erasme.png"), mirror: MIRROR.erasme }
+  brel:   { spImg: spRaw("live_brel.png"),   spAge: spRaw("live_brel.age.txt"),   mirrorKey: "brel"  },
+  delta:  { spImg: spRaw("live_delta.png"),  spAge: spRaw("live_delta.age.txt"),  mirrorKey: "delta" },
+  erasme: { spImg: spRaw("live_erasme.png"), spAge: spRaw("live_erasme.age.txt"), mirrorKey: "eras"  }
 };
-const ERR_IMG_SP = spRaw("TDID_Erreur.png");
 
+/* Rafraîchissement & seuil (5 min) */
+const REFRESH_MS = 3000;
+const STALE_MS   = 5 * 60 * 1000; // 5 min
+
+/* ====== UI refs ====== */
 const img   = document.getElementById('view');
-const note  = document.getElementById('note');
 const stamp = document.getElementById('stamp');
-const chip  = document.getElementById('srcChip');
+const led   = document.getElementById('led');
+const note  = document.getElementById('note');
 const btns  = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
-for (const k in btns) btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); };
 function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k===depot); } }
+for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
+/* ====== Utils ====== */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
-function setStamp(){ stamp.textContent = new Date().toLocaleString(); }
-function setChip(text, ok){ chip.textContent = text; chip.className = 'chip ' + (ok?'ok':'err'); }
 
-function show(src, label){
-  return new Promise(resolve=>{
-    img.onload  = ()=>{ setChip(`source: ${label}`, true); setStamp(); resolve(true); };
-    img.onerror = ()=>{ setChip(`${label} KO`, false); setStamp(); resolve(false); };
+function setLed(color){ led.className = "light " + color; }
+function setStamp(sourceLabel){ stamp.textContent = `${sourceLabel} • ${new Date().toLocaleString()}`; }
+
+/* Parse robuste de l'epoch stocké dans *.age.txt (SP) */
+function normalizeEpoch(raw){
+  if (raw == null) return null;
+  let s = String(raw).replace(/^\uFEFF/,'').trim();
+  if (!/^\d+$/.test(s)) s = s.replace(/[^\d]/g,'');
+  if (!s) return null;
+  let ms = Number(s);
+  if (ms < 1e12) ms *= 1000;        // secondes -> ms
+  const now = Date.now();
+  if (ms - now > 10*60*1000){       // garde-fou = correction TZ locale
+    const offsetMin = new Date().getTimezoneOffset();
+    ms = ms - offsetMin*60000;
+  }
+  return ms;
+}
+
+/* Lecture de l'âge SP */
+async function readAgeSP(url){
+  try{
+    const r = await fetch(cb(url), {cache:'no-store', credentials:'include'});
+    if(!r.ok) return {ms:null, why:'HTTP '+r.status};
+    const raw = await r.text();
+    const ms  = normalizeEpoch(raw);
+    if (!Number.isFinite(ms)) return {ms:null, why:'parse'};
+    return {ms, why:null};
+  }catch(e){ return {ms:null, why:'fetch'}; }
+}
+
+/* Lecture du latest.json (miroir) */
+async function readLatestJSON(){
+  try{
+    const r = await fetch(cb(MIRROR_LATEST), {cache:'no-store'});
+    if (!r.ok) return {ok:false, why:'HTTP '+r.status};
+    const j = await r.json();
+    return {ok:true, data:j};
+  }catch(e){ return {ok:false, why:'fetch'}; }
+}
+
+function show(src, srcLabel, ledColor){
+  return new Promise(res=>{
+    img.onload  = ()=>{ setLed(ledColor); setStamp(srcLabel); res(true); };
+    img.onerror = ()=>{ setLed('r');      setStamp(srcLabel+' KO'); res(false); };
     img.src = cb(src);
   });
 }
 
+/* ====== BOUCLE ====== */
 async function tick(force=false){
   const cfg = DATA[depot];
-  let diag = `Dépôt: ${depot}\n`;
+  let diag = `Depot: ${depot}\n`;
 
-  // 1) SP d'abord
-  const okSp = await show(cfg.spImg, "SP");
-  if (okSp){ note.textContent = diag + "SP OK"; return; }
+  /* 1) Essayer SP (âge + image) */
+  const age = await readAgeSP(cfg.spAge);
+  if (age.ms !== null){
+    const delta = Date.now() - age.ms;
+    const dSec  = Math.round(delta/1000);
+    const stale = delta >= STALE_MS;
+    diag += `age(SP) OK • Δ=${dSec}s → ${stale?'STALE':'OK'}`;
 
-  // 2) fallback alias miroir (stables)
-  const okMir = await show(cfg.mirror, "Miroir");
-  if (okMir){ note.textContent = diag + "Miroir OK"; return; }
+    if (!stale){
+      const okSp = await show(cfg.spImg, "SP", "g");
+      if (okSp){ note.textContent = diag + "\nsource: SP"; return; }
+      // SP image KO : on tombera sur le miroir plus bas
+      diag += "\nSP image KO → fallback miroir";
+    } else {
+      // SP en retard : on tombera sur le miroir plus bas
+      diag += "\nSP en retard (≥5 min) → fallback miroir";
+    }
+  } else {
+    diag += `age(SP) indisponible (${age.why}) → fallback miroir`;
+  }
 
-  await show(ERR_IMG_SP, "Erreur");
-  note.textContent = diag + "Sources indisponibles";
+  /* 2) Miroir : lire latest.json (URL + ts) */
+  const latest = await readLatestJSON();
+  if (!latest.ok || !latest.data?.items?.[cfg.mirrorKey]){
+    // rien de fiable côté miroir → erreur
+    await show(ERR_IMG_MAIN, "Erreur (miroir indisponible)", "r");
+    note.textContent = diag + `\nlatest.json indisponible (${latest.why ?? 'inconnu'})\n→ Erreur (origine : miroir indisponible)`;
+    return;
+  }
+  const it = latest.data.items[cfg.mirrorKey]; // {url, ts, file}
+  const tsMs   = Number(it.ts) * 1000;
+  const deltaM = Date.now() - tsMs;
+  const dSecM  = Math.round(deltaM/1000);
+  const staleM = deltaM >= STALE_MS;
+  diag += `\nage(miroir) OK • Δ=${dSecM}s → ${staleM?'STALE':'OK'}`;
+
+  if (staleM){
+    await show(ERR_IMG_MAIN, "Erreur (miroir ≥5 min)", "r");
+    note.textContent = diag + "\n→ Erreur (origine : miroir en retard)";
+    return;
+  }
+
+  // Afficher l’image miroir (anti-cache par cb())
+  const okMir = await show(it.url, "Miroir", "y");
+  if (okMir){
+    note.textContent = diag + "\nsource: Miroir";
+  } else {
+    await show(ERR_IMG_MAIN, "Erreur (miroir KO)", "r");
+    note.textContent = diag + "\n→ Erreur (origine : image miroir KO)";
+  }
 }
 
-setInterval(()=>tick(false), 3000);
+setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
 </script>
 </body>
