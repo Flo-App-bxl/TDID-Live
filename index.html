@@ -38,17 +38,10 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ============================
-   CONFIG
-   ============================ */
+/* ====== TOKEN GITHUB ====== */
+const GH_TOKEN = "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"; // <-- remplace ici par ton token GitHub personnel (lecture seule)
 
-/* chemin local où tu stockeras le token (tel que fourni) */
-const LOCAL_TOKEN_PATH = "C:/Users/legrainf/OneDrive - STIB-MIVB/TDID_APP/V2/token.txt";
-
-/* token par défaut vide — sera rempli par getToken() */
-let GH_TOKEN = "";
-
-/* SharePoint paths */
+/* ====== SharePoint ====== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
@@ -59,7 +52,7 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png"), age: spRaw("live_erasme.age.txt") }
 };
 
-/* GitHub repo */
+/* ====== GitHub (API) ====== */
 const GH_USER  = "Flo-App-bxl";
 const GH_REPO  = "TDID-Live";
 const GH_BRANCH= "main";
@@ -71,7 +64,7 @@ const ERR_IMG_SP = `${GH_RAW_BASE}/TDID_Erreur.png`;
 const REFRESH_MS = 3000;
 const STALE_MS   = 10 * 60 * 1000; // 10 min
 
-/* ===== UI ===== */
+/* ====== UI ====== */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
@@ -90,9 +83,7 @@ function setTop(status, label){
   stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
 }
 
-/* ============================
-   UTILITIES
-   ============================ */
+/* --- utils --- */
 function normalizeEpoch(raw){
   if (raw == null) return null;
   let s = String(raw).replace(/^\uFEFF/,'').trim();
@@ -120,53 +111,7 @@ async function readAgeSP(url){
   }catch(e){ return {ms:null, why:'fetch'}; }
 }
 
-/* ============================
-   TOKEN LOADING (multiples tentatives)
-   ============================ */
-
-/*
-  Stratégie :
-  1) tentative fetch relative "token.txt" (si index/token servis par même serveur)
-  2) tentative fetch file:///C:/... (souvent bloqué par navigateur)
-  3) si tout échoue, on continue sans token (quota public = 60 req/h)
-*/
-async function tryFetchTokenRelative() {
-  try {
-    const r = await fetch("token.txt", {cache:'no-store'});
-    if (!r.ok) return null;
-    const t = (await r.text()).trim();
-    return t || null;
-  } catch(e){ return null; }
-}
-
-async function tryFetchTokenFileUri() {
-  try {
-    const fileUri = "file:///" + LOCAL_TOKEN_PATH.replace(/\\/g, '/');
-    // note: la plupart des navigateurs bloquent fetch() sur file:// — on tente quand même
-    const r = await fetch(fileUri, {cache:'no-store'});
-    if (!r.ok) return null;
-    const t = (await r.text()).trim();
-    return t || null;
-  } catch(e){ return null; }
-}
-
-async function getTokenAndStart() {
-  // 1) try relative
-  let t = await tryFetchTokenRelative();
-  if (t) { GH_TOKEN = t; console.info("Token chargé (relative token.txt)"); start(); return; }
-
-  // 2) try file:// (may fail due to browser security)
-  t = await tryFetchTokenFileUri();
-  if (t) { GH_TOKEN = t; console.info("Token chargé (file://)"); start(); return; }
-
-  // 3) fallback: no token
-  console.warn("Aucun token local chargé. La page fonctionnera avec quota public GitHub (limite 60 req/h).");
-  start();
-}
-
-/* ============================
-   CACHE ANTI-RATE-LIMIT
-   ============================ */
+/* ====== Cache anti-rate-limit GitHub ====== */
 const LATEST_CACHE_TTL = 60000; // 60 s
 const latestCache = {
   brel:   { ts:null, url:null, updated:null, tFetch:0 },
@@ -174,9 +119,7 @@ const latestCache = {
   erasme: { ts:null, url:null, updated:null, tFetch:0 }
 };
 
-/* ============================
-   loadLatest (HEAD SHA -> contents) avec token si disponible
-   ============================ */
+/* ====== latest.json via API GitHub ====== */
 async function loadLatest(depotKey){
   const now = Date.now();
   const cache = latestCache[depotKey];
@@ -184,8 +127,10 @@ async function loadLatest(depotKey){
     return { url: cache.url, ts: cache.ts, updated: cache.updated };
   }
   try{
-    const headers = { 'Accept': 'application/vnd.github+json' };
-    if (GH_TOKEN) headers['Authorization'] = `Bearer ${GH_TOKEN}`;
+    const headers = {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': `Bearer ${GH_TOKEN}`
+    };
 
     const refUrl = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`;
     const refRes = await fetch(cb(refUrl), {cache:'no-store', headers});
@@ -220,15 +165,12 @@ async function loadLatest(depotKey){
 
     return { url: cache.url, ts: cache.ts, updated: cache.updated };
   }catch(e){
-    // si on a un cache précédent, on le réutilise silencieusement
     if (latestCache[depotKey].ts) return { url: cache.url, ts: cache.ts, updated: cache.updated };
     return null;
   }
 }
 
-/* ============================
-   image helpers
-   ============================ */
+/* pré-charge sans remplacer l’image affichée (évite le flicker) */
 function preload(src, withCred=false){
   return new Promise(res=>{
     const test = new Image();
@@ -248,9 +190,7 @@ async function renderFrom(src, statusLabel){
   });
 }
 
-/* ============================
-   main loop
-   ============================ */
+/* ====== boucle ====== */
 async function tick(force=false){
   const sp = DATA_SP[depot];
   let diag = `Depot: ${depot}\n`;
@@ -297,28 +237,8 @@ async function tick(force=false){
   }
 }
 
-/* ============================
-   bootstrap
-   ============================ */
-function start(){
-  setInterval(()=>tick(false), REFRESH_MS);
-  tick(true);
-}
-
-/* lance la tentative de chargement du token puis démarre la boucle */
-getTokenAndStart();
-
-/* ============================
-   NOTE / SÉCURITÉ
-   ============================
- - Si tu sers index.html via un serveur local (recommandé), place token.txt
-   au même dossier (ou adapte tryFetchTokenRelative). Exemple facile :
-     cd path/to/folder
-     python -m http.server 8000
- - Ajoute token.txt à .gitignore pour éviter tout commit accidentel.
- - Si le navigateur bloque file://, la tentative sera silencieusement ignorée et
-   la page continuera sans token (quota public GitHub).
- ============================ */
+setInterval(()=>tick(false), REFRESH_MS);
+tick(true);
 </script>
 </body>
 </html>
