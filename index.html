@@ -74,8 +74,8 @@
         <video id="splashVideo"
                muted playsinline autoplay preload="auto"
                disablePictureInPicture webkit-playsinline
-               poster="assets/intro_poster.jpg">
-          <source src="assets/intro.mp4" type="video/mp4">
+               poster="https://flo-app-bxl.github.io/TDID-Live/assets/intro_poster.jpg">
+          <source src="https://flo-app-bxl.github.io/TDID-Live/assets/intro.mp4" type="video/mp4">
         </video>
         <button id="skipIntro" class="skip">Passer • Overslaan</button>
         <div class="fallback">
@@ -98,16 +98,15 @@ const JSDELIVR=`https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 
-const REFRESH_MS=6000;          // boucle UI
-const FETCH_MIN=60000;          // 1 vrai fetch/min
-const STALE_MS=10*60*1000;      // 10 min
-const CACHE_MIRROR_TTL=60*1000; // miroir cache local 60 s
-const STARTUP_MAX_MS=10000;     // timeout sécurité splash (si vidéo ne démarre pas)
+const REFRESH_MS=6000;         
+const FETCH_MIN=60000;          
+const STALE_MS=10*60*1000;      
+const CACHE_MIRROR_TTL=60*1000; 
+const STARTUP_MAX_MS=10000;     
 
-/* ===== SharePoint (prioritaire) – URLs anti-cache “dur” ===== */
+/* ===== SharePoint anti-cache ===== */
 const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
-/* ajoute ?v=ts DANS SourceUrl + &t=ts après download.aspx */
 function spFresh(fileName){
   const now=Date.now();
   const encoded=encodeURIComponent(`${SP_FOLDER}/${fileName}?v=${now}`);
@@ -119,9 +118,11 @@ function spUrlFor(depotKey){
   return spFresh('live_erasme.png');
 }
 
-/* ===== UI refs ===== */
-const img=document.getElementById('view'), note=document.getElementById('note'),
-      led=document.getElementById('led'), stamp=document.getElementById('stamp'),
+/* ===== UI Refs ===== */
+const img=document.getElementById('view'),
+      note=document.getElementById('note'),
+      led=document.getElementById('led'),
+      stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
       splash=document.getElementById('splash'),
       splashVid=document.getElementById('splashVideo'),
@@ -145,16 +146,16 @@ function showBanner(s){banner.style.display=s?'block':'none';}
 function showSplash(on){splash.style.display=on?'flex':'none';splashActive=on;}
 function endSplash(reason){ if(!splashActive) return; showSplash(false); try{ splashVid.pause(); }catch{}; note.textContent=(note.textContent?note.textContent+'\n':'')+`splash end: ${reason}`; }
 if (splashVid){
-  splashVid.play().catch(()=>{ /* silence iOS */ });
+  splashVid.play().catch(()=>{});
   splashVid.addEventListener('playing',()=>{ const fb=splash.querySelector('.fallback'); if(fb) fb.style.display='none'; });
-  splashVid.addEventListener('ended',()=>endSplash('ended')); // <<< n’enlève le splash qu’à la fin
+  splashVid.addEventListener('ended',()=>endSplash('ended')); 
 }
 if (skipBtn){ skipBtn.addEventListener('click',()=>endSplash('skip')); }
 
 function preload(src,cred=false){return new Promise(res=>{const t=new Image(); if(cred)t.referrerPolicy='no-referrer-when-downgrade'; t.onload=()=>res(true); t.onerror=()=>res(false); t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
 function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text);res(true);};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false);};t.src=exact?src:(src+(src.includes('?')?'&':'?')+'t='+Date.now());});}
 
-/* ===== Fetch latest.json : RAW → CDN → API → RAW2 ===== */
+/* ===== Fetch latest.json ===== */
 async function fetchLatest(depotKey, forceAPI=false){
   const now=Date.now();
   if(!forceAPI && !forceFetch && now-lastFetchAt[depotKey]<FETCH_MIN && latestData[depotKey]) return latestData[depotKey];
@@ -195,22 +196,18 @@ async function tick(){
   let latest=null;
   try{ latest=await fetchLatest(k); }
   catch(e){ 
-    // Pendant le splash, on ne montre pas l'erreur (elle sera derrière)
     if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); }
     note.textContent=`${diag}latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;
     return;
   }
 
-  // âge simple
   let ageMs=Date.now()-latest.ts; let ageSec=Math.round(ageMs/1000); const tooOld=ageMs>=STALE_MS;
 
-  // si âge > 60 s → forcer un refresh API pour fraîcheur
   if(ageMs>60000){
     diag+=`Age>60s → Forcing API refresh\n`;
     try{ latest=await fetchLatest(k,true); ageMs=Date.now()-latest.ts; ageSec=Math.round(ageMs/1000); }catch{ diag+=`API force failed\n`; }
   }
 
-  // SP prioritaire (URL SP fraîche à chaque tick)
   const spUrl=spUrlFor(k);
   const spOK=await preload(spUrl,true);
   if(spOK){
@@ -222,7 +219,6 @@ async function tick(){
     return;
   }
 
-  // SP KO + trop vieux => erreur (affichée derrière le splash tant qu'il n'est pas fini)
   if(tooOld){
     if(!splashActive){ await renderFrom(ERR_IMG,{status:'err',text:'Erreur (données >10min)'}); }
     diag+=`HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n`+
@@ -231,7 +227,6 @@ async function tick(){
     return;
   }
 
-  // Données récentes -> miroir exact
   const okMir=await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true);
   if(okMir){
     lastMirror[k]={url:latest.url,timeLoaded:Date.now()};
@@ -241,7 +236,6 @@ async function tick(){
     return;
   }
 
-  // Miroir KO : montrer cache ≤60s sinon erreur
   const cached=lastMirror[k];
   if(cached && (Date.now()-cached.timeLoaded)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
