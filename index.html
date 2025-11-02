@@ -20,23 +20,24 @@
   .stamp{opacity:.9;font-size:.9em}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
 
-  /* === Bandeau défilant "Refresh +10min" === */
+  /* === Bandeau défilant centré (horizontal + vertical) === */
   .banner{
     position:fixed;
-    top:64px;
+    top:50%;
     left:50%;
-    transform:translateX(-50%);
-    background:rgba(242,182,54,0.7); /* var(--warn) avec 70% opacité */
+    transform:translate(-50%,-50%);
+    background:rgba(242,182,54,0.7); /* var(--warn) à 70% opacité */
     color:#000;
-    padding:6px 14px;
-    border-radius:8px;
+    padding:8px 16px;
+    border-radius:10px;
     font-weight:600;
-    z-index:9;
+    z-index:20;
     display:none;
     overflow:hidden;
     white-space:nowrap;
     width:80vw;
     text-align:center;
+    box-shadow:0 0 12px rgba(0,0,0,0.4);
   }
 
   .banner span{
@@ -72,25 +73,21 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ====== Config publique RAW ====== */
 const GH_USER   = "Flo-App-bxl";
 const GH_REPO   = "TDID-Live";
 const GH_BRANCH = "main";
 const GH_RAW    = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
-
 const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
 const LATEST_URL = {
   brel:   `${GH_RAW}/time_brel/latest.json`,
   delta:  `${GH_RAW}/time_delta/latest.json`,
   erasme: `${GH_RAW}/time_erasme/latest.json`
 };
-
 const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
 const REFRESH_MS = 3000;
-const STALE_MS   = 10*60*1000; // 10 min
-const JITTER_OK  = 5*1000;     // règle des ±5 s
+const STALE_MS   = 10*60*1000;
+const JITTER_OK  = 5*1000;
 
-/* SharePoint (si accessible) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
@@ -100,12 +97,11 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png") }
 };
 
-/* ====== UI ====== */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
 const led   = document.getElementById('led');
-const banner= document.getElementById('banner'); // <-- bandeau
+const banner= document.getElementById('banner');
 const btns  = { brel:document.getElementById('brel'), delta:document.getElementById('delta'), erasme:document.getElementById('erasme') };
 
 let depot = localStorage.getItem('tdid_depot') || 'brel';
@@ -113,7 +109,6 @@ function setActive(){ for(const k in btns){ btns[k].classList.toggle('active', k
 for(const k in btns){ btns[k].onclick = () => { depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
 setActive();
 
-/* ====== helpers ====== */
 const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 function setTop(status, label){
   led.className = 'dot ' + (status==='ok'?'ok':status==='warn'?'warn':'err');
@@ -141,8 +136,7 @@ async function renderFrom(src, statusLabel){
   });
 }
 
-/* ====== lecture latest.json (RAW uniquement) ====== */
-function key(depot){ return `tdid_last_good_${depot}`; } // {ts,url}
+function key(depot){ return `tdid_last_good_${depot}`; }
 async function readLatestRaw(depotKey){
   const url = cb(LATEST_URL[depotKey]);
   const r   = await fetch(url, {cache:'no-store'});
@@ -150,7 +144,6 @@ async function readLatestRaw(depotKey){
   const j = await r.json();
   const it = j?.items?.[depotKey];
   if (!it?.ts) throw new Error('bad json');
-
   let imgUrl = it.url;
   if (!imgUrl){
     const f = (it.file||"").split('/').pop();
@@ -159,19 +152,15 @@ async function readLatestRaw(depotKey){
   }
   const tsMs = Number(it.ts)*1000;
   if (!Number.isFinite(tsMs)) throw new Error('bad ts');
-
   return { ts: tsMs, url: imgUrl };
 }
 
-/* ====== boucle ====== */
 async function tick(force=false){
   const sp = DATA_SP[depot];
   let diag = `Depot: ${depot}\n`;
   let latest = null;
-
   try{ latest = await readLatestRaw(depot); }
   catch(e){ diag += `latest.json RAW KO (${e.message})`; }
-
   const lastGood = readLocal(key(depot));
   if (!latest && lastGood){ latest = lastGood; diag += `\n→ fallback cache local`; }
 
