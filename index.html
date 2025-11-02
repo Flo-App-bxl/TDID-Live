@@ -18,7 +18,7 @@
   .dot{width:10px;height:10px;border-radius:50%}
   .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
   .stamp{opacity:.9;font-size:.9em}
-  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
+  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.95;font-size:.85em;text-align:left;white-space:pre-line;max-width:92vw;transform:translateX(-50%);background:#0f1115cc;border:1px solid #1e2330;border-radius:10px;padding:8px 10px}
 </style>
 </head>
 <body>
@@ -35,30 +35,21 @@
   </div>
 
   <div class="wrap"><img id="view" alt="TDID Live"></div>
-  <div class="note" id="note"></div>
+  <div class="note" id="note">diag…</div>
 
 <script>
-/* ======================
-   CONFIG GÉNÉRALE
-   ====================== */
-
+/* ============== CONFIG ============== */
 const GH_USER   = "Flo-App-bxl";
 const GH_REPO   = "TDID-Live";
 const GH_BRANCH = "main";
 const API_BASE  = "https://api.github.com";
 const GH_RAW    = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
 const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
-
-const MIRROR_DIR = {
-  brel:   "mirror_brel",
-  delta:  "mirror_delta",
-  erasme: "mirror_erasme"
-};
-
+const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
 const REFRESH_MS = 3000;
-const STALE_MS   = 10 * 60 * 1000; // 10 min
+const STALE_MS   = 10*60*1000; // 10 min
 
-/* --- SharePoint (OneDrive local STIB) --- */
+// SharePoint
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
@@ -68,7 +59,7 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png") }
 };
 
-/* --- Interface --- */
+// UI
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
@@ -85,64 +76,165 @@ function setTop(status, label){
   led.className = 'dot ' + (status==='ok'?'ok':status==='warn'?'warn':'err');
   stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
 }
+function log(msg){ console.log(msg); note.textContent = (note.textContent?note.textContent+"\n":"")+msg; }
 
-/* ======================
-   TOKEN (optionnel)
-   ====================== */
+// token optionnel (token.txt à côté de l’index)
 let GH_TOKEN = "";
 async function loadToken(){
   try{
     const r = await fetch("token.txt", {cache:'no-store'});
     if (r.ok){
       GH_TOKEN = (await r.text()).trim();
-      console.info("Token chargé depuis token.txt");
+      if (GH_TOKEN) log("🔐 token chargé");
+    } else {
+      log(`(info) token.txt absent (${r.status})`);
     }
-  }catch(e){}
+  }catch(e){ log("(info) token.txt non chargé"); }
 }
 
-/* ======================
-   API SANS CACHE
-   ====================== */
-async function getHeadSha(){
-  const headers = { 'Accept': 'application/vnd.github+json' };
-  if (GH_TOKEN) headers['Authorization'] = `Bearer ${GH_TOKEN}`;
-  const r = await fetch(`${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`, {headers, cache:'no-store'});
+/* ===== API anti-cache (avec fallback RAW) ===== */
+async function getHeadSha(headers){
+  const r = await fetch(`${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`, {headers, cache:'no-store', mode:'cors'});
   if (!r.ok) throw new Error('ref:'+r.status);
   const j = await r.json();
   return j?.object?.sha;
 }
-
-async function getFileContent(path, ref){
-  const headers = { 'Accept': 'application/vnd.github+json' };
-  if (GH_TOKEN) headers['Authorization'] = `Bearer ${GH_TOKEN}`;
-  const r = await fetch(`${API_BASE}/repos/${GH_USER}/${GH_REPO}/contents/${path}?ref=${ref}`, {headers, cache:'no-store'});
+async function getFileContent(path, ref, headers){
+  const r = await fetch(`${API_BASE}/repos/${GH_USER}/${GH_REPO}/contents/${path}?ref=${ref}`, {headers, cache:'no-store', mode:'cors'});
   if (!r.ok) throw new Error('content:'+r.status);
   const j = await r.json();
-  const txt = atob(j.content.replace(/\s/g,''));
+  const txt = atob(String(j.content||"").replace(/\s/g,''));
   return JSON.parse(txt);
 }
 
-/* ======================
-   LECTURE latest.json (ANTI-CACHE)
-   ====================== */
+// Fallback RAW direct (peut être stale, mais jamais “rien”)
+async function getRawLatest(depotKey){
+  const url = cb(`${GH_RAW}/time_${depotKey}/latest.json`);
+  const r = await fetch(url, {cache:'no-store', mode:'cors'});
+  if (!r.ok) throw new Error('raw:'+r.status);
+  return await r.json();
+}
+
 async function loadLatest(depotKey){
+  const headers = { 'Accept':'application/vnd.github+json' };
+  if (GH_TOKEN) headers['Authorization'] = `Bearer ${GH_TOKEN}`;
+
+  // 1) API avec token (si dispo)
   try{
-    const ref = await getHeadSha();
-    const json = await getFileContent(`time_${depotKey}/latest.json`, ref);
+    log(`→ HEAD (API) ${GH_TOKEN?'avec token':'sans token'}`);
+    const ref = await getHeadSha(headers);
+    log(`ref=${(ref||'').slice(0,7)}`);
+    const json = await getFileContent(`time_${depotKey}/latest.json`, ref, headers);
     const it = json?.items?.[depotKey];
-    if (!it || !it.ts) return null;
+    if (!it?.ts) throw new Error('bad json');
     let url = it.url;
     if (!url){
-      const f = (it.file||"").split("/").pop();
+      const f = (it.file||"").split('/').pop();
       url = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
     }
-    return { ts: it.ts*1000, url };
+    return { ts: it.ts*1000, url, ref };
   }catch(e){
-    console.warn("loadLatest() KO:", e);
+    log(`API ${GH_TOKEN?'(token)':'(public)'} KO: ${e.message}`);
+    // si on a tenté avec token et qu’il existe, on retente sans header Authorization (cas token invalide)
+    if (GH_TOKEN){
+      try{
+        log("→ Retry API sans token");
+        const h2 = { 'Accept':'application/vnd.github+json' };
+        const ref2 = await getHeadSha(h2);
+        log(`ref=${(ref2||'').slice(0,7)} (retry)`);
+        const json2 = await getFileContent(`time_${depotKey}/latest.json`, ref2, h2);
+        const it2 = json2?.items?.[depotKey];
+        if (!it2?.ts) throw new Error('bad json');
+        let url2 = it2.url;
+        if (!url2){
+          const f2 = (it2.file||"").split('/').pop();
+          url2 = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f2}`;
+        }
+        return { ts: it2.ts*1000, url: url2, ref: ref2 };
+      }catch(e2){
+        log(`API public KO: ${e2.message}`);
+      }
+    }
+  }
+
+  // 2) RAW fallback
+  try{
+    log("→ RAW fallback");
+    const j = await getRawLatest(depotKey);
+    const it = j?.items?.[depotKey];
+    if (!it?.ts) throw new Error('bad raw json');
+    let url = it.url;
+    if (!url){
+      const f = (it.file||"").split('/').pop();
+      url = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
+    }
+    return { ts: it.ts*1000, url, ref: 'raw' };
+  }catch(e){
+    log(`RAW KO: ${e.message}`);
     return null;
   }
 }
 
-/* ======================
-   OUTILS
-   ========
+/* ===== outils visuels ===== */
+function preload(src){
+  return new Promise(res=>{
+    const t = new Image();
+    t.onload  = ()=>res(true);
+    t.onerror = ()=>res(false);
+    t.src = cb(src);
+  });
+}
+async function renderFrom(src, statusLabel){
+  return new Promise(res=>{
+    const loader = new Image();
+    loader.onload = ()=>{ img.src = loader.src; setTop(statusLabel.status, statusLabel.text); res(true); };
+    loader.onerror= ()=>{ setTop('err', statusLabel.text + ' KO'); res(false); };
+    loader.src = cb(src);
+  });
+}
+
+/* ===== boucle ===== */
+const latestCache = { brel:null, delta:null, erasme:null };
+
+async function tick(force=false){
+  note.textContent = ""; // reset diag à chaque tick
+  const sp = DATA_SP[depot];
+
+  const latest = await loadLatest(depot);
+  if (!latest){
+    log("❌ latest.json indisponible (API+RAW)");
+    const okSP = await preload(sp.img);
+    if (okSP){ await renderFrom(sp.img, {status:'ok', text:'SP'}); log("→ rendu SP"); }
+    else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); log("→ rendu ERREUR"); }
+    return;
+  }
+
+  const ageMs = Date.now() - latest.ts;
+  const ageSec = Math.round(ageMs/1000);
+  const stale = ageMs >= STALE_MS;
+  log(`✓ latest : ref=${latest.ref}, Δ=${ageSec}s, ${stale?'STALE':'OK'}`);
+
+  if (stale){
+    await renderFrom(ERR_IMG, {status:'err', text:'Erreur (miroir ≥10min)'}); 
+    log("→ miroir en retard");
+    return;
+  }
+
+  const spOK = await preload(sp.img);
+  if (spOK){ await renderFrom(sp.img, {status:'ok', text:'SP'}); log("→ rendu SP"); return; }
+
+  const mirOK = await preload(latest.url);
+  if (mirOK){ await renderFrom(latest.url, {status:'warn', text:'Miroir'}); log("→ rendu MIRROR"); }
+  else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); log("→ rendu ERREUR"); }
+}
+
+/* ===== start ===== */
+async function start(){
+  await loadToken();     // si token.txt dispo -> utilisé; sinon on passe en public/RAW automatiquement
+  setInterval(()=>tick(false), REFRESH_MS);
+  tick(true);
+}
+start();
+</script>
+</body>
+</html>
