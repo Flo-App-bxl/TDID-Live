@@ -5,20 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TDID Live – Brel / Delta / Erasm.</title>
 <style>
-  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-  body{padding-top:64px}
-  .top{position:fixed;top:0;left:0;right:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
+  :root{
+    --bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;
+    --accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f
+  }
+  html,body{
+    height:100%;margin:0;background:var(--bg);color:var(--fg);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  }
+  body{
+    display:flex;flex-direction:column;
+  }
+  .top{
+    flex-shrink:0;
+    height:64px;
+    display:flex;gap:8px;align-items:center;
+    padding:10px 12px;
+    background:#12151bde;
+    border-bottom:1px solid var(--line);
+    backdrop-filter:blur(6px);
+    z-index:10;
+  }
   .brand{font-weight:700;margin-right:8px}
-  .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer}
+  .btn{
+    padding:8px 14px;border:1px solid var(--line);
+    border-radius:12px;background:var(--card);
+    color:var(--fg);cursor:pointer;
+    transition:background .2s;
+  }
+  .btn:hover{background:#1a1f2a}
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
-  .wrap{height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center}
-  img{max-width:100%;max-height:100%;object-fit:contain}
+  .wrap{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  img{
+    max-width:100%;max-height:100%;object-fit:contain;
+    display:block;margin:auto;
+  }
   .status{display:flex;align-items:center;gap:8px;margin-left:auto}
   .dot{width:10px;height:10px;border-radius:50%}
-  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+  .dot.ok{background:var(--ok)} 
+  .dot.warn{background:var(--warn)} 
+  .dot.err{background:var(--err)}
   .stamp{opacity:.9;font-size:.9em}
-  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.95;font-size:.85em;text-align:left;white-space:pre-line;max-width:92vw;transform:translateX(-50%);background:#0f1115cc;border:1px solid #1e2330;border-radius:10px;padding:8px 10px}
+  .note{
+    position:fixed;bottom:8px;left:50%;
+    transform:translateX(-50%);
+    opacity:.85;font-size:.85em;
+    text-align:center;white-space:pre-line;
+    max-width:92vw;
+  }
 </style>
 </head>
 <body>
@@ -27,29 +64,31 @@
     <button class="btn" id="brel">Brel</button>
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
-
     <div class="status">
       <span id="led" class="dot"></span>
       <span class="stamp" id="stamp">—</span>
     </div>
   </div>
 
-  <div class="wrap"><img id="view" alt="TDID Live"></div>
-  <div class="note" id="note">diag…</div>
+  <div class="wrap">
+    <img id="view" alt="TDID Live">
+  </div>
+  <div class="note" id="note"></div>
 
 <script>
-/* ============== CONFIG ============== */
+/* ========= CONFIG ========= */
 const GH_USER   = "Flo-App-bxl";
 const GH_REPO   = "TDID-Live";
 const GH_BRANCH = "main";
 const API_BASE  = "https://api.github.com";
 const GH_RAW    = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
-const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
+
 const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
+const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
 const REFRESH_MS = 3000;
 const STALE_MS   = 10*60*1000; // 10 min
 
-// SharePoint
+/* --- SharePoint (optionnel si accessible) --- */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
@@ -59,7 +98,7 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png") }
 };
 
-// UI
+/* ========= UI ========= */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
@@ -76,109 +115,79 @@ function setTop(status, label){
   led.className = 'dot ' + (status==='ok'?'ok':status==='warn'?'warn':'err');
   stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
 }
-function log(msg){ console.log(msg); note.textContent = (note.textContent?note.textContent+"\n":"")+msg; }
 
-// token optionnel (token.txt à côté de l’index)
-let GH_TOKEN = "";
-async function loadToken(){
-  try{
-    const r = await fetch("token.txt", {cache:'no-store'});
-    if (r.ok){
-      GH_TOKEN = (await r.text()).trim();
-      if (GH_TOKEN) log("🔐 token chargé");
-    } else {
-      log(`(info) token.txt absent (${r.status})`);
-    }
-  }catch(e){ log("(info) token.txt non chargé"); }
-}
+/* ========= ETag Cache (anti-quota) ========= */
+const etagStore = {
+  get(key){ try { return JSON.parse(localStorage.getItem(key)||"null"); } catch { return null; } },
+  set(key,val){ localStorage.setItem(key, JSON.stringify(val)); }
+};
 
-/* ===== API anti-cache (avec fallback RAW) ===== */
-async function getHeadSha(headers){
-  const r = await fetch(`${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`, {headers, cache:'no-store', mode:'cors'});
+async function getHeadShaETag(){
+  const url = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`;
+  const key = `etag:${url}`;
+  const cached = etagStore.get(key);
+  const headers = { 'Accept': 'application/vnd.github+json' };
+  if (cached?.etag) headers['If-None-Match'] = cached.etag;
+
+  const r = await fetch(url, {headers, cache:'no-store'});
+  if (r.status === 304 && cached?.body) return cached.body.object.sha;
   if (!r.ok) throw new Error('ref:'+r.status);
-  const j = await r.json();
-  return j?.object?.sha;
+  const etag = r.headers.get('ETag');
+  const body = await r.json();
+  if (etag) etagStore.set(key, {etag, body});
+  return body?.object?.sha;
 }
-async function getFileContent(path, ref, headers){
-  const r = await fetch(`${API_BASE}/repos/${GH_USER}/${GH_REPO}/contents/${path}?ref=${ref}`, {headers, cache:'no-store', mode:'cors'});
+
+async function getLatestJsonAtRefETag(depotKey, refSha){
+  const path = `time_${depotKey}/latest.json`;
+  const url  = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/contents/${path}?ref=${refSha}`;
+  const key  = `etag:${url}`;
+  const cached = etagStore.get(key);
+  const headers = { 'Accept': 'application/vnd.github+json' };
+  if (cached?.etag) headers['If-None-Match'] = cached.etag;
+
+  const r = await fetch(url, {headers, cache:'no-store'});
+  if (r.status === 304 && cached?.json) return cached.json;
   if (!r.ok) throw new Error('content:'+r.status);
+  const etag = r.headers.get('ETag');
   const j = await r.json();
   const txt = atob(String(j.content||"").replace(/\s/g,''));
-  return JSON.parse(txt);
+  const json = JSON.parse(txt);
+  if (etag) etagStore.set(key, {etag, json});
+  return json;
 }
 
-// Fallback RAW direct (peut être stale, mais jamais “rien”)
-async function getRawLatest(depotKey){
-  const url = cb(`${GH_RAW}/time_${depotKey}/latest.json`);
-  const r = await fetch(url, {cache:'no-store', mode:'cors'});
-  if (!r.ok) throw new Error('raw:'+r.status);
-  return await r.json();
-}
-
+/* ========= Charge latest.json avec fallback RAW ========= */
 async function loadLatest(depotKey){
-  const headers = { 'Accept':'application/vnd.github+json' };
-  if (GH_TOKEN) headers['Authorization'] = `Bearer ${GH_TOKEN}`;
-
-  // 1) API avec token (si dispo)
   try{
-    log(`→ HEAD (API) ${GH_TOKEN?'avec token':'sans token'}`);
-    const ref = await getHeadSha(headers);
-    log(`ref=${(ref||'').slice(0,7)}`);
-    const json = await getFileContent(`time_${depotKey}/latest.json`, ref, headers);
-    const it = json?.items?.[depotKey];
-    if (!it?.ts) throw new Error('bad json');
+    const ref = await getHeadShaETag();
+    const j   = await getLatestJsonAtRefETag(depotKey, ref);
+    const it  = j?.items?.[depotKey];
+    if (!it?.ts) return null;
     let url = it.url;
     if (!url){
       const f = (it.file||"").split('/').pop();
       url = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
     }
     return { ts: it.ts*1000, url, ref };
-  }catch(e){
-    log(`API ${GH_TOKEN?'(token)':'(public)'} KO: ${e.message}`);
-    // si on a tenté avec token et qu’il existe, on retente sans header Authorization (cas token invalide)
-    if (GH_TOKEN){
-      try{
-        log("→ Retry API sans token");
-        const h2 = { 'Accept':'application/vnd.github+json' };
-        const ref2 = await getHeadSha(h2);
-        log(`ref=${(ref2||'').slice(0,7)} (retry)`);
-        const json2 = await getFileContent(`time_${depotKey}/latest.json`, ref2, h2);
-        const it2 = json2?.items?.[depotKey];
-        if (!it2?.ts) throw new Error('bad json');
-        let url2 = it2.url;
-        if (!url2){
-          const f2 = (it2.file||"").split('/').pop();
-          url2 = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f2}`;
-        }
-        return { ts: it2.ts*1000, url: url2, ref: ref2 };
-      }catch(e2){
-        log(`API public KO: ${e2.message}`);
-      }
-    }
-  }
-
-  // 2) RAW fallback
-  try{
-    log("→ RAW fallback");
-    const j = await getRawLatest(depotKey);
-    const it = j?.items?.[depotKey];
-    if (!it?.ts) throw new Error('bad raw json');
-    let url = it.url;
-    if (!url){
-      const f = (it.file||"").split('/').pop();
-      url = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
-    }
-    return { ts: it.ts*1000, url, ref: 'raw' };
-  }catch(e){
-    log(`RAW KO: ${e.message}`);
-    return null;
+  }catch{
+    try{
+      const r = await fetch(`${GH_RAW}/time_${depotKey}/latest.json?bust=${Date.now()}`, {cache:'no-store'});
+      if (!r.ok) throw 0;
+      const j = await r.json();
+      const it = j?.items?.[depotKey];
+      if (!it?.ts) return null;
+      let url = it.url || `${GH_RAW}/${MIRROR_DIR[depotKey]}/${(it.file||"").split('/').pop()}`;
+      return { ts: it.ts*1000, url, ref:'raw' };
+    }catch{ return null; }
   }
 }
 
-/* ===== outils visuels ===== */
-function preload(src){
+/* ========= utils image ========= */
+function preload(src, withCred=false){
   return new Promise(res=>{
     const t = new Image();
+    if (withCred) t.referrerPolicy = 'no-referrer-when-downgrade';
     t.onload  = ()=>res(true);
     t.onerror = ()=>res(false);
     t.src = cb(src);
@@ -193,48 +202,52 @@ async function renderFrom(src, statusLabel){
   });
 }
 
-/* ===== boucle ===== */
-const latestCache = { brel:null, delta:null, erasme:null };
-
+/* ========= boucle principale ========= */
 async function tick(force=false){
-  note.textContent = ""; // reset diag à chaque tick
   const sp = DATA_SP[depot];
+  let diag = `Depot: ${depot}\n`;
 
   const latest = await loadLatest(depot);
   if (!latest){
-    log("❌ latest.json indisponible (API+RAW)");
-    const okSP = await preload(sp.img);
-    if (okSP){ await renderFrom(sp.img, {status:'ok', text:'SP'}); log("→ rendu SP"); }
-    else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); log("→ rendu ERREUR"); }
+    diag += "latest.json indisponible (API/RAW)";
+    const okSP = await preload(sp.img, true);
+    if (okSP){ await renderFrom(sp.img, {status:'ok', text:'SP'}); }
+    else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); }
+    note.textContent = diag;
     return;
   }
 
   const ageMs = Date.now() - latest.ts;
   const ageSec = Math.round(ageMs/1000);
   const stale = ageMs >= STALE_MS;
-  log(`✓ latest : ref=${latest.ref}, Δ=${ageSec}s, ${stale?'STALE':'OK'}`);
+  diag += `ref=${latest.ref||'raw'} • Δ=${ageSec}s → ${stale?'STALE':'OK'}`;
 
   if (stale){
-    await renderFrom(ERR_IMG, {status:'err', text:'Erreur (miroir ≥10min)'}); 
-    log("→ miroir en retard");
+    await renderFrom(ERR_IMG, {status:'err', text:'Erreur (≥10min)'});
+    note.textContent = diag + "\n→ Miroir en retard";
     return;
   }
 
-  const spOK = await preload(sp.img);
-  if (spOK){ await renderFrom(sp.img, {status:'ok', text:'SP'}); log("→ rendu SP"); return; }
+  const spOK = await preload(sp.img, true);
+  if (spOK){
+    await renderFrom(sp.img, {status:'ok', text:'SP'});
+    note.textContent = diag + "\nsource: SP";
+    return;
+  }
 
   const mirOK = await preload(latest.url);
-  if (mirOK){ await renderFrom(latest.url, {status:'warn', text:'Miroir'}); log("→ rendu MIRROR"); }
-  else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); log("→ rendu ERREUR"); }
+  if (mirOK){
+    await renderFrom(latest.url, {status:'warn', text:'Miroir'});
+    note.textContent = diag + "\nsource: Miroir";
+  } else {
+    await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
+    note.textContent = diag + "\n→ Erreur (miroir & SP KO)";
+  }
 }
 
-/* ===== start ===== */
-async function start(){
-  await loadToken();     // si token.txt dispo -> utilisé; sinon on passe en public/RAW automatiquement
-  setInterval(()=>tick(false), REFRESH_MS);
-  tick(true);
-}
-start();
+/* ========= start ========= */
+setInterval(()=>tick(false), REFRESH_MS);
+tick(true);
 </script>
 </body>
 </html>
