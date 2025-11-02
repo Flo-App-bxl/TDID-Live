@@ -5,57 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TDID Live – Brel / Delta / Erasm.</title>
 <style>
-  :root{
-    --bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;
-    --accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f
-  }
-  html,body{
-    height:100%;margin:0;background:var(--bg);color:var(--fg);
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-  }
-  body{
-    display:flex;flex-direction:column;
-  }
-  .top{
-    flex-shrink:0;
-    height:64px;
-    display:flex;gap:8px;align-items:center;
-    padding:10px 12px;
-    background:#12151bde;
-    border-bottom:1px solid var(--line);
-    backdrop-filter:blur(6px);
-    z-index:10;
-  }
+  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  body{display:flex;flex-direction:column}
+  .top{flex-shrink:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
   .brand{font-weight:700;margin-right:8px}
-  .btn{
-    padding:8px 14px;border:1px solid var(--line);
-    border-radius:12px;background:var(--card);
-    color:var(--fg);cursor:pointer;
-    transition:background .2s;
-  }
-  .btn:hover{background:#1a1f2a}
+  .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer}
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
-  .wrap{
-    flex:1;display:flex;align-items:center;justify-content:center;
-    overflow:hidden;
-  }
-  img{
-    max-width:100%;max-height:100%;object-fit:contain;
-    display:block;margin:auto;
-  }
+  .wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
   .status{display:flex;align-items:center;gap:8px;margin-left:auto}
   .dot{width:10px;height:10px;border-radius:50%}
-  .dot.ok{background:var(--ok)} 
-  .dot.warn{background:var(--warn)} 
-  .dot.err{background:var(--err)}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
   .stamp{opacity:.9;font-size:.9em}
-  .note{
-    position:fixed;bottom:8px;left:50%;
-    transform:translateX(-50%);
-    opacity:.85;font-size:.85em;
-    text-align:center;white-space:pre-line;
-    max-width:92vw;
-  }
+  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line;max-width:92vw}
 </style>
 </head>
 <body>
@@ -70,25 +33,24 @@
     </div>
   </div>
 
-  <div class="wrap">
-    <img id="view" alt="TDID Live">
-  </div>
+  <div class="wrap"><img id="view" alt="TDID Live"></div>
   <div class="note" id="note"></div>
 
 <script>
-/* ========= CONFIG ========= */
+/* ====== CONFIG ====== */
 const GH_USER   = "Flo-App-bxl";
 const GH_REPO   = "TDID-Live";
 const GH_BRANCH = "main";
 const API_BASE  = "https://api.github.com";
 const GH_RAW    = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
-
-const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
+const MIRROR_DIR= { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
 const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
-const REFRESH_MS = 3000;
-const STALE_MS   = 10*60*1000; // 10 min
 
-/* --- SharePoint (optionnel si accessible) --- */
+const REFRESH_MS = 3000;
+const STALE_MS   = 10*60*1000;  // 10 min : au-delà on refuse
+const MAX_OK_LAG = 180*1000;    // 3 min : si RAW/ancien cache dépasse ça, on refuse
+
+/* SharePoint (si accessible) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw = f => `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + f)}`;
@@ -98,7 +60,7 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png") }
 };
 
-/* ========= UI ========= */
+/* ====== UI ====== */
 const img   = document.getElementById('view');
 const stamp = document.getElementById('stamp');
 const note  = document.getElementById('note');
@@ -116,17 +78,18 @@ function setTop(status, label){
   stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
 }
 
-/* ========= ETag Cache (anti-quota) ========= */
+/* ====== ETag store (zéro quota en 304) ====== */
 const etagStore = {
-  get(key){ try { return JSON.parse(localStorage.getItem(key)||"null"); } catch { return null; } },
-  set(key,val){ localStorage.setItem(key, JSON.stringify(val)); }
+  get:k=>{ try{return JSON.parse(localStorage.getItem(k)||"null");}catch{return null;} },
+  set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))
 };
 
+/* === API anti-cache (ETag) === */
 async function getHeadShaETag(){
   const url = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/git/refs/heads/${GH_BRANCH}`;
   const key = `etag:${url}`;
   const cached = etagStore.get(key);
-  const headers = { 'Accept': 'application/vnd.github+json' };
+  const headers = { 'Accept':'application/vnd.github+json' };
   if (cached?.etag) headers['If-None-Match'] = cached.etag;
 
   const r = await fetch(url, {headers, cache:'no-store'});
@@ -143,7 +106,7 @@ async function getLatestJsonAtRefETag(depotKey, refSha){
   const url  = `${API_BASE}/repos/${GH_USER}/${GH_REPO}/contents/${path}?ref=${refSha}`;
   const key  = `etag:${url}`;
   const cached = etagStore.get(key);
-  const headers = { 'Accept': 'application/vnd.github+json' };
+  const headers = { 'Accept':'application/vnd.github+json' };
   if (cached?.etag) headers['If-None-Match'] = cached.etag;
 
   const r = await fetch(url, {headers, cache:'no-store'});
@@ -157,33 +120,38 @@ async function getLatestJsonAtRefETag(depotKey, refSha){
   return json;
 }
 
-/* ========= Charge latest.json avec fallback RAW ========= */
+/* === Charger latest.json : API ONLY (pas de RAW), refuse vieux contenus === */
 async function loadLatest(depotKey){
   try{
     const ref = await getHeadShaETag();
     const j   = await getLatestJsonAtRefETag(depotKey, ref);
     const it  = j?.items?.[depotKey];
     if (!it?.ts) return null;
+
+    const tsMs = Number(it.ts)*1000;
+    const now  = Date.now();
+    // refuse JSON si trop vieux (ex. 1100s)
+    if (!Number.isFinite(tsMs)) return null;
+    const age = now - tsMs;
+    if (age > STALE_MS) return null;        // >10 min = KO
+    if (age > MAX_OK_LAG) {
+      // trop vieux pour être fiable → ne pas afficher via miroir
+      return { ts: tsMs, url: null, ref, tooOld:true };
+    }
+
     let url = it.url;
     if (!url){
       const f = (it.file||"").split('/').pop();
       url = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
     }
-    return { ts: it.ts*1000, url, ref };
+    return { ts: tsMs, url, ref, tooOld:false };
   }catch{
-    try{
-      const r = await fetch(`${GH_RAW}/time_${depotKey}/latest.json?bust=${Date.now()}`, {cache:'no-store'});
-      if (!r.ok) throw 0;
-      const j = await r.json();
-      const it = j?.items?.[depotKey];
-      if (!it?.ts) return null;
-      let url = it.url || `${GH_RAW}/${MIRROR_DIR[depotKey]}/${(it.file||"").split('/').pop()}`;
-      return { ts: it.ts*1000, url, ref:'raw' };
-    }catch{ return null; }
+    // API KO → pas de RAW, on remonte "null" pour préférer SP/Erreur
+    return null;
   }
 }
 
-/* ========= utils image ========= */
+/* ====== images ====== */
 function preload(src, withCred=false){
   return new Promise(res=>{
     const t = new Image();
@@ -202,14 +170,14 @@ async function renderFrom(src, statusLabel){
   });
 }
 
-/* ========= boucle principale ========= */
+/* ====== boucle ====== */
 async function tick(force=false){
   const sp = DATA_SP[depot];
   let diag = `Depot: ${depot}\n`;
 
   const latest = await loadLatest(depot);
   if (!latest){
-    diag += "latest.json indisponible (API/RAW)";
+    diag += "latest.json indisponible (API) → fallback SP/Erreur";
     const okSP = await preload(sp.img, true);
     if (okSP){ await renderFrom(sp.img, {status:'ok', text:'SP'}); }
     else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); }
@@ -217,17 +185,20 @@ async function tick(force=false){
     return;
   }
 
-  const ageMs = Date.now() - latest.ts;
-  const ageSec = Math.round(ageMs/1000);
-  const stale = ageMs >= STALE_MS;
-  diag += `ref=${latest.ref||'raw'} • Δ=${ageSec}s → ${stale?'STALE':'OK'}`;
-
-  if (stale){
-    await renderFrom(ERR_IMG, {status:'err', text:'Erreur (≥10min)'});
-    note.textContent = diag + "\n→ Miroir en retard";
+  const ageSec = Math.round((Date.now() - latest.ts)/1000);
+  if (latest.tooOld){
+    // JSON reçu mais trop vieux → ne pas utiliser le miroir
+    diag += `ref=${latest.ref} • Δ=${ageSec}s (trop vieux) → SP only`;
+    const okSP = await preload(sp.img, true);
+    if (okSP){ await renderFrom(sp.img, {status:'ok', text:'SP'}); }
+    else { await renderFrom(ERR_IMG, {status:'err', text:'Erreur'}); }
+    note.textContent = diag;
     return;
   }
 
+  diag += `ref=${latest.ref} • Δ=${ageSec}s → OK`;
+
+  // SP prioritaire
   const spOK = await preload(sp.img, true);
   if (spOK){
     await renderFrom(sp.img, {status:'ok', text:'SP'});
@@ -235,17 +206,21 @@ async function tick(force=false){
     return;
   }
 
-  const mirOK = await preload(latest.url);
-  if (mirOK){
-    await renderFrom(latest.url, {status:'warn', text:'Miroir'});
-    note.textContent = diag + "\nsource: Miroir";
-  } else {
-    await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
-    note.textContent = diag + "\n→ Erreur (miroir & SP KO)";
+  // sinon miroir via URL du latest frais
+  if (latest.url){
+    const mirOK = await preload(latest.url);
+    if (mirOK){
+      await renderFrom(latest.url, {status:'warn', text:'Miroir'});
+      note.textContent = diag + "\nsource: Miroir";
+      return;
+    }
   }
+
+  await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
+  note.textContent = diag + "\n→ Erreur (miroir & SP KO)";
 }
 
-/* ========= start ========= */
+/* ====== start ====== */
 setInterval(()=>tick(false), REFRESH_MS);
 tick(true);
 </script>
