@@ -57,6 +57,8 @@ const GH_USER   = "Flo-App-bxl";
 const GH_REPO   = "TDID-Live";
 const GH_BRANCH = "main";
 const GH_RAW    = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
+const GH_API    = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
+const JSDELIVR  = `https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
 
 const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_erasme" };
 const LATEST_URL = {
@@ -108,7 +110,7 @@ function preload(src, withCred=false){
     const t=new Image();
     if (withCred) t.referrerPolicy='no-referrer-when-downgrade';
     t.onload=()=>res(true); t.onerror=()=>res(false);
-    t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); // anti-cache pour le test d’existence
+    t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); // anti-cache test existence
   });
 }
 function renderFrom(src, statusLabel, exact=false){
@@ -120,36 +122,82 @@ function renderFrom(src, statusLabel, exact=false){
   });
 }
 
-/* ====== Fetch latest.json (simple) ====== */
+/* ====== Fetch latest.json : RAW → jsDelivr → GitHub API ====== */
 async function fetchLatest(depotKey){
   const now = Date.now();
-  if (!forceFetch && now - lastFetchAt[depotKey] < FETCH_MIN && latestData[depotKey]) return latestData[depotKey];
-
-  let http = '';
-  try{
-    const url = cbMinute(LATEST_URL[depotKey]);
-    const r = await fetch(url, { cache:'no-store', headers:{'Cache-Control':'no-store, no-cache'} });
-    http = `RAW:${r.status}`;
-    if (!r.ok) throw new Error('HTTP '+r.status);
-    const j = await r.json();
-    const it = j?.items?.[depotKey];
-    if (!it?.ts) throw new Error('bad json');
-    let imgUrl = it.url;
-    if (!imgUrl){
-      const f = (it.file||'').split('/').pop();
-      if (!f) throw new Error('no file');
-      imgUrl = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
-    }
-    latestData[depotKey] = { ts: Number(it.ts)*1000, url: imgUrl };
-    lastFetchAt[depotKey] = now;
-    lastHttp[depotKey] = http;
-    forceFetch = false;
+  if (!forceFetch && now - lastFetchAt[depotKey] < FETCH_MIN && latestData[depotKey]) {
     return latestData[depotKey];
-  }catch(e){
-    lastFetchAt[depotKey] = now;
-    lastHttp[depotKey] = http ? http + ' fail' : 'fetch fail';
-    throw e;
   }
+
+  const path = depotKey==='brel' ? '/time_brel/latest.json'
+             : depotKey==='delta'? '/time_delta/latest.json'
+             :                      '/time_erasme/latest.json';
+
+  const urlRAW = cbMinute(GH_RAW + path);
+  const urlCDN = cbMinute(`${JSDELIVR}${path}`);
+  const urlAPI = `${GH_API}${path}?ref=${GH_BRANCH}`; // API GitHub (on demande RAW via Accept)
+
+  let trace = [];
+
+  async function tryFetch(url, opt, tag){
+    try{
+      const r = await fetch(url, opt);
+      trace.push(`${tag}:${r.status}`);
+      if(!r.ok) return null;
+      const j = await r.json(); // API renvoie RAW si Accept: v3.raw
+      return j;
+    }catch(e){
+      trace.push(`${tag}:fail`);
+      return null;
+    }
+  }
+
+  // 1) RAW GitHub (no-store + bypass minute)
+  let j = await tryFetch(urlRAW, {
+    cache:'no-store',
+    mode:'cors',
+    referrerPolicy:'no-referrer',
+    headers:{'Cache-Control':'no-store, no-cache'}
+  }, 'RAW');
+
+  // 2) jsDelivr (CDN)
+  if(!j){
+    j = await tryFetch(urlCDN, {
+      cache:'no-store',
+      mode:'cors',
+      referrerPolicy:'no-referrer',
+      headers:{'Cache-Control':'no-store, no-cache'}
+    }, 'CDN');
+  }
+
+  // 3) GitHub Contents API (sans token)
+  if(!j){
+    j = await tryFetch(urlAPI, {
+      cache:'no-store',
+      mode:'cors',
+      referrerPolicy:'no-referrer',
+      headers:{'Accept':'application/vnd.github.v3.raw'}
+    }, 'API');
+  }
+
+  lastFetchAt[depotKey] = now;
+  lastHttp[depotKey]    = trace.join(' ');
+
+  if(!j) throw new Error('all fetch attempts failed');
+
+  const it = j?.items?.[depotKey];
+  if (!it?.ts) throw new Error('bad json');
+
+  let imgUrl = it.url;
+  if (!imgUrl){
+    const f = (it.file||'').split('/').pop();
+    if (!f) throw new Error('no file');
+    imgUrl = `${GH_RAW}/${MIRROR_DIR[depotKey]}/${f}`;
+  }
+
+  latestData[depotKey] = { ts: Number(it.ts)*1000, url: imgUrl };
+  forceFetch = false;
+  return latestData[depotKey];
 }
 
 /* ====== Tick (UI) ====== */
@@ -158,13 +206,13 @@ async function tick(){
   const k = depot;
   let diag = `Depot: ${k}\n`;
 
-  // 1) Lire latest.json (simple)
+  // 1) Lire latest.json
   let latest = null;
   try{
     latest = await fetchLatest(k);
   }catch(e){
     await renderFrom(ERR_IMG, {status:'err', text:'Erreur'});
-    diag += `latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;
+    diag += `latest.json KO (${lastHttp[k] || e.message})\n→ Pas de données`;
     note.textContent = diag;
     return;
   }
@@ -189,7 +237,7 @@ async function tick(){
   }
 
   // 4) Sinon, miroir horodaté exact
-  const okMir = await renderFrom(latest.url, {status: tooOld?'warn':'warn', text:'Miroir (horodaté)'}, true);
+  const okMir = await renderFrom(latest.url, {status:'warn', text:'Miroir (horodaté)'}, true);
   if (okMir){
     showBanner(false); // bandeau réservé au cas SP+>10min
     diag += `HTTP: ${lastHttp[k]} • last fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}\n` +
