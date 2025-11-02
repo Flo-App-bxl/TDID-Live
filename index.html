@@ -92,7 +92,7 @@ const ERR_IMG   = `${GH_RAW}/TDID_Erreur.png`;
 /* ====== Timers ====== */
 const REFRESH_MS = 6000;           // 6 s (UI)
 const STALE_MS   = 10*60*1000;     // 10 min
-const JITTER_OK  = 5*1000;         // règle des ±5 s
+const JITTER_OK  = 0;         // règle des ±5 s > 5*1000
 
 /* ====== Throttle latest.json ====== */
 const LATEST_MIN_INTERVAL = 60*1000; // 60 s max 1 appel
