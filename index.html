@@ -89,22 +89,22 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ===== Constantes GitHub RAW ===== */
+/* ===== GitHub RAW (pour les images & erreur) ===== */
 const GH_RAW="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main";
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 
-/* ===== Timings & règles ===== */
-const REFRESH_MS=6000;          // boucle UI
-const FETCH_MIN=60000;          // lecture latest.json max 1/min
-const STALE_MS=10*60*1000;      // 10 min → stale
-const CACHE_MIRROR_TTL=60000;   // affichage dernier miroir ≤ 60s si KO
+/* ===== Timings ===== */
+const REFRESH_MS=6000;           // boucle UI
+const FETCH_MIN=60000;           // latest.json max 1/min (mode sans token)
+const API_MIN=15000;             // latest.json min 15s si token présent
+const STALE_MS=10*60*1000;       // 10 min stale
+const CACHE_MIRROR_TTL=60000;    // cache miroir 60s
 
-/* ===== SharePoint (comme dans ta version qui marche) ===== */
+/* ===== SharePoint (schéma download.aspx) ===== */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 function spFresh(fileName){
-  // même schéma que “ici” (download.aspx + SourceUrl encodé)
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + fileName)}`;
 }
 function spUrlFor(k){
@@ -127,7 +127,7 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* ===== Splash Vidéo (affichage bloqué jusqu'à fin/skip/timeout) ===== */
+/* ===== Splash vidéo ===== */
 let splashActive=true;
 function showSplash(on){splash.style.display=on?'flex':'none';splashActive=on;}
 function endSplash(){ if(!splashActive) return; showSplash(false); try{splashVid.pause();}catch{}; }
@@ -135,7 +135,7 @@ splashVid?.play().catch(()=>{});
 splashVid?.addEventListener('playing',()=>{ const fb=splash.querySelector('.fallback'); if(fb) fb.style.display='none'; });
 splashVid?.addEventListener('ended',()=>endSplash());
 skipBtn?.addEventListener('click',()=>endSplash());
-setTimeout(()=>endSplash(), 10000); // sécurité si la vidéo ne part pas
+setTimeout(()=>endSplash(), 10000); // sécurité
 
 /* ===== Helpers ===== */
 function setTop(status,label){ led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err'); stamp.textContent=`${label} • ${new Date().toLocaleString()}`; }
@@ -155,7 +155,16 @@ function renderFrom(src, statusLabel, exact=false){
   });
 }
 
-/* ===== latest.json : RAW → CDN → API → RAW2 ===== */
+/* ===== Token GitHub (optionnel, non committé) =====
+   - Tu peux passer par l’URL :  https://.../index.html#pat=<TON_TOKEN>
+     → il sera stocké en localStorage et le hash sera retiré.
+   - Ou mettre manuellement en console : localStorage.setItem('tdid_pat','<TON_TOKEN>') */
+(function ingestTokenFromHash(){
+  const m = location.hash.match(/#.*pat=([^&]+)/);
+  if(m){ try{ localStorage.setItem('tdid_pat', decodeURIComponent(m[1])); }catch{}; location.hash=''; }
+})();
+
+/* ===== latest.json : RAW → CDN → API → RAW2 (avec token si dispo) ===== */
 let latestCache={}, lastFetchAt={}, lastHttp={}, lastSource={}, forceFetch=true;
 for(const k of ['brel','delta','erasme']){ latestCache[k]=null; lastFetchAt[k]=0; lastHttp[k]=''; lastSource[k]='-'; }
 
@@ -163,9 +172,24 @@ const JSDELIVR=`https://cdn.jsdelivr.net/gh/Flo-App-bxl/TDID-Live@main`;
 const GH_API=`https://api.github.com/repos/Flo-App-bxl/TDID-Live/contents`;
 const cbMinute=u=>u + (u.includes('?')?'&':'?') + 'x_bypass=' + Math.floor(Date.now()/60000);
 
+function apiHeaders(){
+  const pat = localStorage.getItem('tdid_pat')||'';
+  const h = {'Accept':'application/vnd.github.v3.raw','Cache-Control':'no-store'};
+  // IMPORTANT: N'affiche jamais le token dans la note.
+  if(pat) { h['Authorization'] = 'Bearer ' + pat; h['X-Requested-With'] = 'TDID-Live'; }
+  // User-Agent est parfois requis; certains navigateurs le bloquent en CORS.
+  return h;
+}
+
+function minInterval(){
+  const pat = localStorage.getItem('tdid_pat')||'';
+  return pat ? API_MIN : FETCH_MIN;
+}
+
 async function fetchLatest(k, forceAPI=false){
   const now=Date.now();
-  if(!forceAPI && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latestCache[k]) return latestCache[k];
+  const minMs = minInterval();
+  if(!forceAPI && !forceFetch && now-lastFetchAt[k]<minMs && latestCache[k]) return latestCache[k];
 
   const path = k==='brel'?'/time_brel/latest.json' : k==='delta'?'/time_delta/latest.json' : '/time_erasme/latest.json';
   const urlRAW  = cbMinute(`${GH_RAW}${path}`);
@@ -173,17 +197,33 @@ async function fetchLatest(k, forceAPI=false){
   const urlAPI  = `${GH_API}${path}?ref=main`;
   const urlRAW2 = cbMinute(`${GH_RAW}${path}`);
 
+  const hasPAT = !!(localStorage.getItem('tdid_pat')||'');
+
   let trace=[], source='-';
-  async function tryJson(url,opt,tag){ try{ const r=await fetch(url,opt); trace.push(`${tag}:${r.status}`); if(!r.ok) return null; source=tag; return await r.json(); }catch{ trace.push(`${tag}:fail`); return null; } }
+  async function tryJson(url,opt,tag){
+    try{
+      const r=await fetch(url,opt);
+      const rem=r.headers?.get('x-ratelimit-remaining'); const lim=r.headers?.get('x-ratelimit-limit');
+      trace.push(`${tag}:${r.status}${rem?`(rem:${rem}/${lim||''})`:''}`);
+      if(!r.ok) return null;
+      source=tag; return await r.json();
+    }catch{ trace.push(`${tag}:fail`); return null; }
+  }
+
   let j=null;
 
-  if(!forceAPI){
-    j = await tryJson(urlRAW,  {cache:'no-store', headers:{'Cache-Control':'no-store, no-cache'}}, 'RAW');
+  if(hasPAT){
+    // Avec token : on privilégie l'API (auth) d'abord, puis RAW/CDN.
+    j = await tryJson(urlAPI, {cache:'no-store', headers: apiHeaders()}, 'API(auth)');
+    if(!j) j = await tryJson(urlRAW, {cache:'no-store', headers:{'Cache-Control':'no-store'}}, 'RAW');
     if(!j) j = await tryJson(urlCDN, {cache:'no-store'}, 'CDN');
-    if(!j) j = await tryJson(urlAPI, {cache:'no-store', headers:{'Accept':'application/vnd.github.v3.raw'}}, 'API');
     if(!j) j = await tryJson(urlRAW2,{cache:'no-store'}, 'RAW2');
   }else{
-    j = await tryJson(urlAPI, {cache:'no-store', headers:{'Accept':'application/vnd.github.v3.raw'}}, 'API(force)');
+    // Sans token : ordre historique
+    j = await tryJson(urlRAW,  {cache:'no-store', headers:{'Cache-Control':'no-store, no-cache'}}, 'RAW');
+    if(!j) j = await tryJson(urlCDN, {cache:'no-store'}, 'CDN');
+    if(!j) j = await tryJson(urlAPI, {cache:'no-store', headers: apiHeaders()}, 'API');
+    if(!j) j = await tryJson(urlRAW2,{cache:'no-store'}, 'RAW2');
   }
 
   lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
@@ -215,18 +255,18 @@ async function tick(){
   let ageSec = Math.round(ageMs/1000);
   const tooOld = ageMs >= STALE_MS;
 
-  // Forcer un appel API si Δ>60s
+  // Forcer API si Δ>60s (utilise token si dispo → API_MIN respecté)
   if(ageMs > 60000){
     try{ latest=await fetchLatest(k,true); ageMs=Date.now()-latest.ts; ageSec=Math.round(ageMs/1000); }catch{}
   }
 
-  // 1) SharePoint (prioritaire) — même logique que la version qui marche
+  // 1) SharePoint prioritaire (download.aspx)
   const spUrl = spUrlFor(k);
   const spOK  = await preload(spUrl, true);
   if (spOK){
     await renderFrom(spUrl, {status: tooOld?'err':'ok', text:'SP'});
     showBannerOn(tooOld);
-    note.textContent = `${diag}Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP`;
+    note.textContent = `${diag}${lastHttp[k]}\nΔ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP`;
     return;
   }
 
@@ -241,7 +281,7 @@ async function tick(){
   const okMir = await renderFrom(latest.url, {status:'warn', text:'Miroir (horodaté)'}, true);
   if(okMir){
     lastMirror[k] = {url: latest.url, time: Date.now()};
-    note.textContent = `${diag}Δ=${ageSec}s → OK\nsource: Miroir`;
+    note.textContent = `${diag}${lastHttp[k]}\nΔ=${ageSec}s → OK\nsource: Miroir`;
     return;
   }
 
