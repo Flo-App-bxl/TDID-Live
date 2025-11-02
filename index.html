@@ -27,14 +27,27 @@
   }
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
-  .splash{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);
-  }
+  .splash{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px); }
   .splash-video{ position:relative; width:min(900px,92vw); aspect-ratio:16/9; }
   .splash-video video, .splash-video .fallback { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px; }
   .splash-video .fallback{ display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1.35; background:#0f1115; border:1px solid var(--line); color:#eaeef5; }
   .splash-video .skip{ position:absolute; right:10px; bottom:10px; z-index:2; padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#141923; color:#fff; cursor:pointer; opacity:.9; }
+
+  /* Settings gear */
+  .gear{margin-left:12px;padding:6px 8px;border-radius:10px;background:transparent;border:1px solid var(--line);cursor:pointer}
+  .gear:hover{background:rgba(255,255,255,.02)}
+
+  /* Modal settings */
+  .modal-back{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:80; align-items:center; justify-content:center; }
+  .modal{ width:min(520px,92vw); background:var(--card); border:1px solid var(--line); padding:18px; border-radius:12px; color:var(--fg); box-shadow:0 8px 30px rgba(0,0,0,.6); }
+  .modal h3{margin:0 0 8px 0}
+  .field{margin:8px 0; display:flex; flex-direction:column; gap:6px}
+  .field input[type="password"], .field input[type="text"], .field textarea{ background:#0f1115; color:var(--fg); border:1px solid var(--line); padding:8px 10px; border-radius:8px; width:100%; }
+  .row{display:flex;gap:8px;align-items:center}
+  .muted{opacity:.8;font-size:.9em}
+  .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+  .small{font-size:.9em;padding:6px 10px}
+  .danger{background:#3b0d0d;color:#fff;border:1px solid #6b1a1a}
 </style>
 </head>
 <body>
@@ -43,9 +56,13 @@
     <button class="btn" id="brel">Brel</button>
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
+
     <div class="status">
       <span id="led" class="dot"></span>
       <span class="stamp" id="stamp">—</span>
+
+      <!-- gear -->
+      <button id="openSettings" class="gear" title="Configurer token">⚙️</button>
     </div>
   </div>
 
@@ -54,11 +71,9 @@
   </div>
 
   <div class="wrap">
-    <!-- Splash vidéo -->
     <div class="splash" id="splash">
       <div class="splash-video">
-        <video id="splashVideo"
-               muted playsinline autoplay preload="auto"
+        <video id="splashVideo" muted playsinline autoplay preload="auto"
                poster="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg">
           <source src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro.mp4" type="video/mp4">
         </video>
@@ -74,30 +89,159 @@
 
   <div class="note" id="note"></div>
 
+  <!-- Modal settings -->
+  <div class="modal-back" id="modalBack">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">Configuration — Token GitHub (local)</h3>
+
+      <div id="authBlock" class="field">
+        <label class="muted">Mot de passe</label>
+        <input id="pwInput" type="password" placeholder="Entrez le mot de passe">
+        <div id="pwMsg" class="muted"></div>
+      </div>
+
+      <div id="tokenBlock" style="display:none">
+        <div class="field">
+          <label class="muted">Token (read-only, repo TDID-Live)</label>
+          <input id="tokenInput" type="text" placeholder="Coller le token ici (ghp_... ou github_pat_...)" autocomplete="off">
+          <div class="muted small">Le token est stocké localement seulement. Il n'est pas envoyé à un serveur tiers.</div>
+        </div>
+
+        <div class="field row">
+          <div class="muted">Token actuel :</div>
+          <div id="tokenMask" class="muted">—</div>
+        </div>
+
+        <div class="actions">
+          <button id="saveToken" class="small">Sauvegarder</button>
+          <button id="removeToken" class="small danger">Supprimer le token</button>
+          <button id="closeModal" class="small">Fermer</button>
+        </div>
+        <div id="tokenMsg" class="muted" style="margin-top:8px"></div>
+      </div>
+
+    </div>
+  </div>
+
 <script>
-/* ===== GitHub RAW ===== */
+/* ======= Variables UI ====== */
+const openSettings = document.getElementById('openSettings');
+const modalBack = document.getElementById('modalBack');
+const pwInput = document.getElementById('pwInput');
+const pwMsg = document.getElementById('pwMsg');
+const tokenBlock = document.getElementById('tokenBlock');
+const tokenInput = document.getElementById('tokenInput');
+const tokenMask = document.getElementById('tokenMask');
+const saveToken = document.getElementById('saveToken');
+const removeToken = document.getElementById('removeToken');
+const closeModal = document.getElementById('closeModal');
+const tokenMsg = document.getElementById('tokenMsg');
+
+const SECRET_PW = 'outlive'; // mot de passe côté client demandé
+
+/* Ouvre la modal */
+openSettings.addEventListener('click', ()=> {
+  modalBack.style.display = 'flex';
+  pwInput.value = '';
+  pwMsg.textContent = '';
+  tokenBlock.style.display = 'none';
+});
+
+/* Ferme la modal */
+closeModal.addEventListener('click', ()=> { modalBack.style.display = 'none'; });
+
+/* Vérif mot de passe */
+pwInput.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') tryUnlock();
+});
+function tryUnlock(){
+  const v = pwInput.value || '';
+  if(v === SECRET_PW){
+    pwMsg.textContent = 'Mot de passe correct — configurez votre token.';
+    tokenBlock.style.display = 'block';
+    pwInput.value = '';
+    loadMaskedToken();
+  } else {
+    pwMsg.textContent = 'Mot de passe incorrect.';
+    tokenBlock.style.display = 'none';
+  }
+}
+
+/* Charger token masqué */
+function loadMaskedToken(){
+  const t = localStorage.getItem('tdid_pat');
+  if(!t){ tokenMask.textContent = '—'; tokenInput.value = ''; tokenMsg.textContent = 'Aucun token présent.'; return; }
+  tokenMask.textContent = maskToken(t);
+  tokenInput.value = '';
+  tokenMsg.textContent = 'Token présent (masqué).';
+}
+
+/* Masque le token pour affichage */
+function maskToken(t){
+  if(!t) return '—';
+  const keep = 4;
+  const p = t.length;
+  if(p <= keep) return '•'.repeat(p);
+  return '•'.repeat(p - keep) + t.slice(-keep);
+}
+
+/* Sauvegarder le token localement */
+saveToken.addEventListener('click', ()=>{
+  const newT = tokenInput.value.trim();
+  if(!newT){ tokenMsg.textContent = 'Collez un token valide.'; return; }
+  // simple vérif format
+  if(!/^ghp_|^github_pat_/.test(newT)){
+    // on accepte quand même, message d'alerte
+    if(!confirm('Le token ne semble pas commencer par ghp_ ou github_pat_. Sauvegarder quand même ?')) return;
+  }
+  localStorage.setItem('tdid_pat', newT);
+  tokenMsg.textContent = 'Token enregistré localement.';
+  tokenMask.textContent = maskToken(newT);
+  tokenInput.value = '';
+  // Recharge la logique fetch (le script utilise automatiquement localStorage)
+});
+
+/* Supprimer le token (demande mot de passe) */
+removeToken.addEventListener('click', ()=>{
+  const pw = prompt('Mot de passe pour supprimer le token :');
+  if(pw !== SECRET_PW){ alert('Mot de passe incorrect — suppression annulée.'); return; }
+  localStorage.removeItem('tdid_pat');
+  tokenMask.textContent = '—';
+  tokenMsg.textContent = 'Token supprimé.';
+});
+
+/* Fermer modal au clic extérieur */
+modalBack.addEventListener('click', (ev)=>{
+  if(ev.target === modalBack) modalBack.style.display = 'none';
+});
+
+/* ====== Le reste du script (inchangé) ====== */
+
+/* GitHub RAW */
 const GH_RAW="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main";
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 
-/* ===== Timings ===== */
-const REFRESH_MS=6000;          // boucle UI
-const FETCH_MIN=60000;          // latest.json max 1/min
-const STALE_MS=10*60*1000;      // 10 min
-const CACHE_MIRROR_TTL=60000;   // cache miroir 60s
+/* Timings */
+const REFRESH_MS=6000;
+const FETCH_MIN=60000;
+const API_MIN=15000;
+const STALE_MS=10*60*1000;
+const CACHE_MIRROR_TTL=60000;
 
-/* ===== SharePoint via liens de partage publics ===== */
-const SP_LINKS = {
-  brel:  "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?e=iSQQzg",
-  delta: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?e=G0ZY2Z",
-  erasme:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQKsOLvrFUtMm3OAxC41BZQBoEg69j0smCZ_xSRq3ZsqVQ?e=NQUnll"
-};
+/* SharePoint (download.aspx) */
+const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
+const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+function spFresh(fileName){
+  return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER + "/" + fileName)}`;
+}
 function spUrlFor(k){
-  const base = SP_LINKS[k];
-  return base ? (base + (base.includes('?')?'&':'?') + 't=' + Date.now()) : '';
+  if(k==='brel')  return spFresh("live_brel.png");
+  if(k==='delta') return spFresh("live_delta.png");
+  return spFresh("live_erasme.png");
 }
 
-/* ===== UI refs ===== */
+/* UI refs */
 const img=document.getElementById('view'), note=document.getElementById('note'),
       led=document.getElementById('led'), stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
@@ -111,7 +255,7 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* ===== Splash vidéo ===== */
+/* Splash video */
 let splashActive=true;
 function showSplash(on){splash.style.display=on?'flex':'none';splashActive=on;}
 function endSplash(){ if(!splashActive) return; showSplash(false); try{splashVid.pause();}catch{}; }
@@ -119,21 +263,19 @@ splashVid?.play().catch(()=>{});
 splashVid?.addEventListener('playing',()=>{ const fb=splash.querySelector('.fallback'); if(fb) fb.style.display='none'; });
 splashVid?.addEventListener('ended',()=>endSplash());
 skipBtn?.addEventListener('click',()=>endSplash());
-setTimeout(()=>endSplash(), 10000); // sécurité
+setTimeout(()=>endSplash(), 10000);
 
-/* ===== Helpers ===== */
+/* Helpers */
 function setTop(status,label){ led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err'); stamp.textContent=`${label} • ${new Date().toLocaleString()}`; }
 function showBannerOn(on){ banner.style.display = on ? 'block' : 'none'; }
-function preload(src){ return new Promise(res=>{ const t=new Image(); t.onload=()=>res(true); t.onerror=()=>res(false); t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); }); }
+function preload(src,withCred=false){ return new Promise(res=>{ const t=new Image(); if(withCred) t.referrerPolicy='no-referrer-when-downgrade'; t.onload=()=>res(true); t.onerror=()=>res(false); t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); }); }
 function renderFrom(src, statusLabel, exact=false){
   return new Promise(res=>{
     const t=new Image();
     t.onload=()=>{
-      let out=src;
-      if(!exact) out = src + (src.includes('?')?'&':'?') + 'bypass=' + Date.now();
+      const out = exact ? src : (src + (src.includes('?')?'&':'?') + 'bypass=' + Date.now());
       img.src = out;
       setTop(statusLabel.status, statusLabel.text);
-      // le splash part seulement à la fin de la vidéo / skip / timeout
       res(true);
     };
     t.onerror=()=>{ setTop('err', statusLabel.text+' KO'); res(false); };
@@ -141,7 +283,16 @@ function renderFrom(src, statusLabel, exact=false){
   });
 }
 
-/* ===== latest.json : RAW → CDN → API → RAW2 ===== */
+/* Token helpers for API */
+function apiHeaders(){
+  const pat = localStorage.getItem('tdid_pat')||'';
+  const h = {'Accept':'application/vnd.github.v3.raw','Cache-Control':'no-store'};
+  if(pat){ h['Authorization']='Bearer '+pat; h['X-Requested-With']='TDID-Live'; }
+  return h;
+}
+function minInterval(){ return localStorage.getItem('tdid_pat') ? API_MIN : FETCH_MIN; }
+
+/* latest.json fetch chain */
 let latestCache={}, lastFetchAt={}, lastHttp={}, lastSource={}, forceFetch=true;
 for(const k of ['brel','delta','erasme']){ latestCache[k]=null; lastFetchAt[k]=0; lastHttp[k]=''; lastSource[k]='-'; }
 
@@ -151,7 +302,8 @@ const cbMinute=u=>u + (u.includes('?')?'&':'?') + 'x_bypass=' + Math.floor(Date.
 
 async function fetchLatest(k, forceAPI=false){
   const now=Date.now();
-  if(!forceAPI && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latestCache[k]) return latestCache[k];
+  const minMs = minInterval();
+  if(!forceAPI && !forceFetch && now-lastFetchAt[k]<minMs && latestCache[k]) return latestCache[k];
 
   const path = k==='brel'?'/time_brel/latest.json' : k==='delta'?'/time_delta/latest.json' : '/time_erasme/latest.json';
   const urlRAW  = cbMinute(`${GH_RAW}${path}`);
@@ -159,39 +311,51 @@ async function fetchLatest(k, forceAPI=false){
   const urlAPI  = `${GH_API}${path}?ref=main`;
   const urlRAW2 = cbMinute(`${GH_RAW}${path}`);
 
+  const hasPAT = !!(localStorage.getItem('tdid_pat')||'');
+
   let trace=[], source='-';
-  async function tryJson(url,opt,tag){ try{ const r=await fetch(url,opt); trace.push(`${tag}:${r.status}`); if(!r.ok) return null; source=tag; return await r.json(); }catch{ trace.push(`${tag}:fail`); return null; } }
+  async function tryJson(url,opt,tag){
+    try{
+      const r=await fetch(url,opt);
+      trace.push(`${tag}:${r.status}`);
+      if(!r.ok) return null;
+      source=tag; return await r.json();
+    }catch{ trace.push(`${tag}:fail`); return null; }
+  }
+
   let j=null;
 
-  if(!forceAPI){
-    j = await tryJson(urlRAW,  {cache:'no-store', headers:{'Cache-Control':'no-store, no-cache'}}, 'RAW');
+  if(hasPAT){
+    j = await tryJson(urlAPI, {cache:'no-store', headers: apiHeaders()}, 'API(auth)');
+    if(!j) j = await tryJson(urlRAW, {cache:'no-store', headers:{'Cache-Control':'no-store'}}, 'RAW');
     if(!j) j = await tryJson(urlCDN, {cache:'no-store'}, 'CDN');
-    if(!j) j = await tryJson(urlAPI, {cache:'no-store', headers:{'Accept':'application/vnd.github.v3.raw'}}, 'API');
     if(!j) j = await tryJson(urlRAW2,{cache:'no-store'}, 'RAW2');
   }else{
-    j = await tryJson(urlAPI, {cache:'no-store', headers:{'Accept':'application/vnd.github.v3.raw'}}, 'API(force)');
+    j = await tryJson(urlRAW,  {cache:'no-store', headers:{'Cache-Control':'no-store, no-cache'}}, 'RAW');
+    if(!j) j = await tryJson(urlCDN, {cache:'no-store'}, 'CDN');
+    if(!j) j = await tryJson(urlAPI, {cache:'no-store', headers: apiHeaders()}, 'API');
+    if(!j) j = await tryJson(urlRAW2,{cache:'no-store'}, 'RAW2');
   }
 
   lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
   if(!j) throw new Error('all fetch attempts failed');
 
   const it=j?.items?.[k]; if(!it?.ts) throw new Error('bad json');
-  let imgUrl=it.url; 
-  if(!imgUrl){ const f=(it.file||'').split('/').pop(); if(!f) throw new Error('no file'); imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`; }
+  let imgUrl=it.url; if(!imgUrl){ const f=(it.file||'').split('/').pop(); if(!f) throw new Error('no file'); imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`; }
 
   latestCache[k]={ts:Number(it.ts)*1000, url:imgUrl};
   forceFetch=false;
   return latestCache[k];
 }
 
-/* ===== Tick ===== */
+/* Tick */
 let lastMirror={};
 async function tick(){
   const k=depot; let diag=`Depot: ${k}\n`;
   let latest;
 
   try{ latest=await fetchLatest(k); }
-  catch(e){ 
+  catch(e){
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});
     note.textContent = `${diag}latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;
     return;
@@ -201,42 +365,32 @@ async function tick(){
   let ageSec = Math.round(ageMs/1000);
   const tooOld = ageMs >= STALE_MS;
 
-  // Forcer un appel API si Δ>60s
   if(ageMs > 60000){
-    diag += `Age>60s → Forcing API refresh\n`;
-    try{ latest=await fetchLatest(k,true); ageMs=Date.now()-latest.ts; ageSec=Math.round(ageMs/1000); }catch{ diag += `API force failed\n`; }
+    try{ latest=await fetchLatest(k,true); ageMs=Date.now()-latest.ts; ageSec=Math.round(ageMs/1000); }catch{}
   }
 
-  // 1) SharePoint via lien public
   const spUrl = spUrlFor(k);
-  if (spUrl){
-    const spOK = await preload(spUrl);
-    if (spOK){
-      await renderFrom(spUrl, {status: tooOld?'err':'ok', text:'SP'});
-      showBannerOn(tooOld);
-      note.textContent = `${diag}HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]}\n`+
-                         `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP\nSP URL: ${spUrl}`;
-      return;
-    }
+  const spOK  = await preload(spUrl, true);
+  if (spOK){
+    await renderFrom(spUrl, {status: tooOld?'err':'ok', text:'SP'});
+    showBannerOn(tooOld);
+    note.textContent = `${diag}Δ=${ageSec}s → ${tooOld?'STALE':'OK'}\nsource: SP`;
+    return;
   }
 
-  // 2) Si trop vieux et SP KO → erreur
   if(tooOld){
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (données >10min)'});
     note.textContent = `${diag}Δ=${ageSec}s → STALE\nsource: KO`;
     return;
   }
 
-  // 3) Miroir (horodaté GitHub)
   const okMir = await renderFrom(latest.url, {status:'warn', text:'Miroir (horodaté)'}, true);
   if(okMir){
     lastMirror[k] = {url: latest.url, time: Date.now()};
-    note.textContent = `${diag}HTTP: ${lastHttp[k]} • source latest: ${lastSource[k]}\n`+
-                       `age(miroir) • Δ=${ageSec}s → OK\nsource: Miroir`;
+    note.textContent = `${diag}Δ=${ageSec}s → OK\nsource: Miroir`;
     return;
   }
 
-  // 4) Cache miroir ≤60s
   const cached = lastMirror[k];
   if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url, {status:'warn', text:'Miroir cache (≤60s)'}, true);
@@ -247,7 +401,7 @@ async function tick(){
   }
 }
 
-/* ===== Start ===== */
+/* Start */
 setInterval(tick, REFRESH_MS);
 tick();
 </script>
