@@ -54,9 +54,9 @@ const DATA = {
   erasme: { spImg: spRaw("live_erasme.png"), mirrorKey: "eras"  }
 };
 
-/* Rafraîchissement & seuil (5 min) */
+/* Refresh & seuil (10 min) */
 const REFRESH_MS = 3000;
-const STALE_MS   = 5 * 60 * 1000;
+const STALE_MS   = 10 * 60 * 1000;
 
 /* ====== UI refs ====== */
 const img   = document.getElementById('view');
@@ -75,6 +75,7 @@ const cb = u => u + (u.includes('?')?'&':'?') + 't=' + Date.now();
 function setLed(c){ led.className = "light " + c; }
 function setStamp(s){ stamp.textContent = `${s} • ${new Date().toLocaleString()}`; }
 
+/* latest.json (miroir) */
 async function readLatestJSON(){
   try{
     const r = await fetch(cb(MIRROR_LATEST), {cache:'no-store'});
@@ -84,6 +85,19 @@ async function readLatestJSON(){
   }catch(e){ return {ok:false, why:'fetch'}; }
 }
 
+/* Précharge une image SANS changer l’affichage (contrôle invisible) */
+function preloadImage(url, timeoutMs=2000){
+  return new Promise(resolve=>{
+    const t = setTimeout(()=>{ cleanup(false); }, timeoutMs); // time-out = KO
+    const im = new Image();
+    im.onload  = ()=>{ cleanup(true);  };
+    im.onerror = ()=>{ cleanup(false); };
+    im.src = cb(url);
+    function cleanup(ok){ clearTimeout(t); resolve(ok); }
+  });
+}
+
+/* Affiche dans le <img> affiché */
 function show(src, label, color){
   return new Promise(res=>{
     img.onload  = ()=>{ setLed(color); setStamp(label); res(true); };
@@ -94,58 +108,53 @@ function show(src, label, color){
 
 /* ====== Logique demandée ======
    1) Lire MIRROR latest.json
-      - si age miroir > 5 min => ERREUR (peu importe SP)
-      - si latest indispo => on affiche SP (sans garde-fou)
-      - si age miroir ≤ 5 min => afficher SP (prioritaire), sinon miroir
+      - si age miroir > 10 min => ERREUR (peu importe SP)
+      - si latest indispo => afficher SP (sans garde-fou)
+      - si age miroir ≤ 10 min => précharger SP en invisible :
+           - si SP OK => afficher SP
+           - sinon     => afficher miroir
 */
 async function tick(force=false){
   const cfg = DATA[depot];
   let diag = `Depot: ${depot}\n`;
 
-  // 1) Miroir d’abord
+  // 1) Mirror d’abord
   const latest = await readLatestJSON();
   if (!latest.ok || !latest.data?.items?.[cfg.mirrorKey]){
-    // Pas de garde-fou dispo → on montre SP quand même
+    // garde-fou indispo → tenter SP directement (sans flash KO)
     diag += `latest.json indisponible (${latest.why ?? 'inconnu'}) → SP sans contrôle d’âge miroir`;
-    const okSp = await show(cfg.spImg, "SP", "g");
-    if (okSp){
-      note.textContent = diag + "\nsource: SP";
+    const okSpPre = await preloadImage(cfg.spImg); // test invisible
+    if (okSpPre){
+      await show(cfg.spImg, "SP", "g");
+      note.textContent = diag + "\nsource: SP (miroir indisponible)";
     } else {
-      await show(ERR_IMG_MAIN, "Erreur (SP KO & miroir indispo)", "r");
+      await show(ERR_IMG_MAIN, "Erreur (miroir indispo + SP KO)", "r");
       note.textContent = diag + "\n→ Erreur (origine : miroir indispo + image SP KO)";
     }
     return;
   }
 
-  const it = latest.data.items[cfg.mirrorKey]; // { url, ts, file? }
-  const tsMs   = Number(it.ts) * 1000;
-  const deltaM = Date.now() - tsMs;
-  const dSecM  = Math.round(deltaM/1000);
-  const staleM = deltaM >= STALE_MS;
-  diag += `age(miroir) • Δ=${dSecM}s → ${staleM ? 'STALE' : 'OK'}`;
+  const it    = latest.data.items[cfg.mirrorKey]; // { url, ts }
+  const tsMs  = Number(it.ts) * 1000;
+  const dMs   = Date.now() - tsMs;
+  const dSec  = Math.round(dMs/1000);
+  const stale = dMs >= STALE_MS;
+  diag += `age(miroir) • Δ=${dSec}s → ${stale ? 'STALE' : 'OK'}`;
 
-  if (staleM){
-    // Garde-fou : miroir en retard → erreur systématique
-    await show(ERR_IMG_MAIN, "Erreur (miroir ≥5 min)", "r");
-    note.textContent = diag + "\n→ Erreur (origine : miroir en retard ≥ 5 min)";
+  if (stale){
+    await show(ERR_IMG_MAIN, "Erreur (miroir ≥10 min)", "r");
+    note.textContent = diag + "\n→ Erreur (origine : miroir en retard ≥ 10 min)";
     return;
   }
 
-  // 2) Miroir frais → SP prioritaire
-  const okSp = await show(cfg.spImg, "SP", "g");
-  if (okSp){
+  // 2) Miroir frais → PRELOAD SP en invisible (aucun flash)
+  const spOk = await preloadImage(cfg.spImg, 2500); // petit timeout
+  if (spOk){
+    await show(cfg.spImg, "SP", "g");
     note.textContent = diag + "\nsource: SP (miroir frais)";
-    return;
-  }
-
-  // 3) SP KO → bascule miroir
-  diag += "\nSP image KO → bascule miroir";
-  const okMir = await show(it.url, "Miroir", "y");
-  if (okMir){
-    note.textContent = diag + "\nsource: Miroir";
   } else {
-    await show(ERR_IMG_MAIN, "Erreur (miroir KO)", "r");
-    note.textContent = diag + "\n→ Erreur (origine : image miroir KO)";
+    await show(it.url, "Miroir", "y");
+    note.textContent = diag + "\nsource: Miroir (SP indisponible)";
   }
 }
 
