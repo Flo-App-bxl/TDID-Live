@@ -18,10 +18,7 @@
   .stamp{opacity:.9;font-size:.9em}
   .wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
-
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.9em;text-align:center;white-space:pre-line;max-width:92vw}
-
-  /* Bandeau centre 70% opacité, texte défilant */
   .banner{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     background:rgba(242,182,54,0.7);color:#000;padding:16px 24px;border-radius:14px;
@@ -30,24 +27,14 @@
   }
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
-
-  /* Splash vidéo (bloque l'affichage jusqu'à la fin) */
   .splash{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);
   }
   .splash-video{ position:relative; width:min(900px,92vw); aspect-ratio:16/9; }
-  .splash-video video, .splash-video .fallback {
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px;
-  }
-  .splash-video .fallback{
-    display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1.35;
-    background:#0f1115; border:1px solid var(--line); color:#eaeef5;
-  }
-  .splash-video .skip{
-    position:absolute; right:10px; bottom:10px; z-index:2;
-    padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#141923; color:#fff; cursor:pointer; opacity:.9;
-  }
+  .splash-video video, .splash-video .fallback { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px; }
+  .splash-video .fallback{ display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1.35; background:#0f1115; border:1px solid var(--line); color:#eaeef5; }
+  .splash-video .skip{ position:absolute; right:10px; bottom:10px; z-index:2; padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#141923; color:#fff; cursor:pointer; opacity:.9; }
 </style>
 </head>
 <body>
@@ -62,13 +49,12 @@
     </div>
   </div>
 
-  <!-- Bandeau FR + NL-BE -->
   <div class="banner" id="banner">
     <span>Refresh + de 10min - contrôler fiabilité via cellule ‘Last Refresh’ • Refresh +10 min – controleer betrouwbaarheid via cel ‘Last Refresh’</span>
   </div>
 
   <div class="wrap">
-    <!-- Splash vidéo au démarrage -->
+    <!-- Splash vidéo -->
     <div class="splash" id="splash">
       <div class="splash-video">
         <video id="splashVideo"
@@ -89,31 +75,29 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ===== Constantes GitHub RAW ===== */
+/* ===== GitHub RAW ===== */
 const GH_RAW="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main";
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 
-/* ===== Timings & règles ===== */
+/* ===== Timings ===== */
 const REFRESH_MS=6000;          // boucle UI
-const FETCH_MIN=60000;          // lecture latest.json max 1/min
-const STALE_MS=10*60*1000;      // 10 min → stale
-const CACHE_MIRROR_TTL=60000;   // affichage dernier miroir ≤ 60s si KO
+const FETCH_MIN=60000;          // latest.json max 1/min
+const STALE_MS=10*60*1000;      // 10 min
+const CACHE_MIRROR_TTL=60000;   // cache miroir 60s
 
-/* ===== SharePoint par LIENS DE PARTAGE PUBLICS =====
-   ⚠️ TODO: colle ici tes 3 liens de partage publics (i.e. “Copier le lien”)
-   Format attendu: https://stibmivb-my.sharepoint.com/:i:/g/personal/....  */
+/* ===== SharePoint via liens de partage publics ===== */
 const SP_LINKS = {
-  brel:  "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/XXXXXXXX?e=YYYY", // TODO
-  delta: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/XXXXXXXX?e=YYYY", // TODO
-  erasme:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/XXXXXXXX?e=YYYY"  // TODO
+  brel:  "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?e=iSQQzg",
+  delta: "https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?e=G0ZY2Z",
+  erasme:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQKsOLvrFUtMm3OAxC41BZQBoEg69j0smCZ_xSRq3ZsqVQ?e=NQUnll"
 };
 function spUrlFor(k){
   const base = SP_LINKS[k];
   return base ? (base + (base.includes('?')?'&':'?') + 't=' + Date.now()) : '';
 }
 
-/* ===== UI Refs ===== */
+/* ===== UI refs ===== */
 const img=document.getElementById('view'), note=document.getElementById('note'),
       led=document.getElementById('led'), stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
@@ -127,21 +111,20 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* ===== Splash Vidéo (affichage bloqué jusqu'à fin) ===== */
+/* ===== Splash vidéo ===== */
 let splashActive=true;
 function showSplash(on){splash.style.display=on?'flex':'none';splashActive=on;}
-function endSplash(reason){ if(!splashActive) return; showSplash(false); try{splashVid.pause();}catch{}; }
+function endSplash(){ if(!splashActive) return; showSplash(false); try{splashVid.pause();}catch{}; }
 splashVid?.play().catch(()=>{});
 splashVid?.addEventListener('playing',()=>{ const fb=splash.querySelector('.fallback'); if(fb) fb.style.display='none'; });
-splashVid?.addEventListener('ended',()=>endSplash('ended'));
-skipBtn?.addEventListener('click',()=>endSplash('skip'));
-setTimeout(()=>endSplash('timeout'), 10000); // sécurité si la vidéo ne part pas
+splashVid?.addEventListener('ended',()=>endSplash());
+skipBtn?.addEventListener('click',()=>endSplash());
+setTimeout(()=>endSplash(), 10000); // sécurité
 
 /* ===== Helpers ===== */
 function setTop(status,label){ led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err'); stamp.textContent=`${label} • ${new Date().toLocaleString()}`; }
 function showBannerOn(on){ banner.style.display = on ? 'block' : 'none'; }
 function preload(src){ return new Promise(res=>{ const t=new Image(); t.onload=()=>res(true); t.onerror=()=>res(false); t.src = src + (src.includes('?')?'&':'?') + 't=' + Date.now(); }); }
-/* renderFrom : ajoute un bypass local systématique */
 function renderFrom(src, statusLabel, exact=false){
   return new Promise(res=>{
     const t=new Image();
@@ -150,7 +133,7 @@ function renderFrom(src, statusLabel, exact=false){
       if(!exact) out = src + (src.includes('?')?'&':'?') + 'bypass=' + Date.now();
       img.src = out;
       setTop(statusLabel.status, statusLabel.text);
-      // On ne retire pas le splash ici : il part SEULEMENT à la fin de la vidéo / skip / timeout.
+      // le splash part seulement à la fin de la vidéo / skip / timeout
       res(true);
     };
     t.onerror=()=>{ setTop('err', statusLabel.text+' KO'); res(false); };
@@ -209,7 +192,6 @@ async function tick(){
 
   try{ latest=await fetchLatest(k); }
   catch(e){ 
-    // On laisse la vidéo, on n'affiche l'erreur que derrière
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});
     note.textContent = `${diag}latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;
     return;
@@ -225,7 +207,7 @@ async function tick(){
     try{ latest=await fetchLatest(k,true); ageMs=Date.now()-latest.ts; ageSec=Math.round(ageMs/1000); }catch{ diag += `API force failed\n`; }
   }
 
-  // 1) SharePoint (via lien public)
+  // 1) SharePoint via lien public
   const spUrl = spUrlFor(k);
   if (spUrl){
     const spOK = await preload(spUrl);
