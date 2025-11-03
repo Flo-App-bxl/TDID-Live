@@ -76,8 +76,9 @@ const API_MIN=10000;              // avec token: latest.json ≤ 10 s
 const STALE_MS=10*60*1000;        // données > 10 min → stale
 const CACHE_MIRROR_TTL=60000;     // miroir cache ≤ 60 s
 const TOKEN_REFRESH_MS=10*60*1000;// rechargement token SP toutes 10 min
+const SP_FRESH_MS=60*1000;        // **SP prioritaire si image ≤ 1 min**
 
-/* SharePoint : images via liens publics déjà fournis */
+/* SharePoint : images via liens publics fournis */
 const SP_LINKS={
   brel:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?e=iSQQzg",
   delta:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?e=G0ZY2Z",
@@ -85,10 +86,10 @@ const SP_LINKS={
 };
 function spImg(k){ return SP_LINKS[k] + "&t=" + Date.now(); }
 
-/* SharePoint : token à la même racine que les images */
+/* SharePoint : token (token2.tkt) à la même racine */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
-function spTokenUrl(){ // download.aspx + anti-cache
+function spTokenUrl(){
   const src = `${SP_FOLDER}/token2.tkt`;
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}&t=${Date.now()}`;
 }
@@ -120,7 +121,27 @@ function showBannerOn(on){banner.style.display=on?'block':'none';}
 function preload(src){return new Promise(res=>{const t=new Image();t.onload=()=>res(true);t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t=' + Date.now();});}
 function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=src+(src.includes('?')?'&':'?')+'bypass='+Date.now();setTop(statusLabel.status,statusLabel.text);res(true)};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false)};t.src=src+(src.includes('?')?'&':'?')+'check='+Date.now();});}
 
-/* ====== Gestion token via SharePoint ====== */
+/* ====== Lecture d’âge réel de l’image SP (Last-Modified) ====== */
+async function spImageAgeMs(spUrl){
+  const tryFetch = async (method) => {
+    try{
+      const r = await fetch(spUrl, { method, cache:'no-store' });
+      if(!r.ok) return NaN;
+      const lm = r.headers.get('Last-Modified') || r.headers.get('last-modified') ||
+                 r.headers.get('x-ms-file-last-modified') || r.headers.get('x-ms-last-modified');
+      if(!lm) return NaN;
+      const ts = Date.parse(lm);
+      if(!Number.isFinite(ts)) return NaN;
+      return Date.now() - ts;
+    }catch{ return NaN; }
+  };
+  let age = await tryFetch('HEAD');
+  if(Number.isFinite(age)) return age;
+  age = await tryFetch('GET'); // fallback si HEAD refusé
+  return age;
+}
+
+/* ====== Token via SP ====== */
 async function loadTokenFromSP(){
   try{
     const r = await fetch(spTokenUrl(), {cache:'no-store'});
@@ -128,21 +149,12 @@ async function loadTokenFromSP(){
     const raw = (await r.text()).trim();
     if(raw){
       const current = localStorage.getItem('tdid_pat')||'';
-      if(current !== raw){
-        localStorage.setItem('tdid_pat', raw);
-        forceFetch = true; // on relancera un fetchLatest rapidement
-      }
-      lastTokenOk = true;
-      lastTokenAt = Date.now();
-    } else {
-      lastTokenOk = false;
-    }
-  }catch{
-    lastTokenOk = false;
-  }
+      if(current !== raw){ localStorage.setItem('tdid_pat', raw); forceFetch = true; }
+      lastTokenOk = true; lastTokenAt = Date.now();
+    } else { lastTokenOk = false; }
+  }catch{ lastTokenOk = false; }
 }
-let lastTokenOk = false;
-let lastTokenAt = 0;
+let lastTokenOk = false, lastTokenAt = 0;
 
 /* ====== latest.json fetch chain ====== */
 function apiHeaders(){
@@ -226,36 +238,47 @@ async function tick(){
   diag += `source latest: ${lastSource[k]} | ${lastHttp[k]}\n`;
   diag += `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}`;
 
-  // Si malgré tout Δ>60s, on force un coup d'API (anti-cache)
+  // Δ>60s → API forcée une fois
   if(ageMs>60000){
     try{ const ref=await fetchLatest(k,true); latest=ref||latest; diag+=`\n→ refresh API forcé (Δ>60s)`; }
     catch(err){ diag+=`\n→ refresh API échoué (${err.message})`; }
   }
 
-  // 1) SharePoint prioritaire (image publique)
+  /* === Contrôle SP basé sur l'âge RÉEL de l'image (Last-Modified) === */
   const spUrl = spImg(k);
-  if(await preload(spUrl)){
-    await renderFrom(spUrl, {status: tooOld?'err':'ok', text:'SP'});
-    showBannerOn(tooOld);
-    note.textContent = `${diag}\nsource: SP\nTokenSP: ${lastTokenOk?'OK':'KO'} • last token: ${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}\nlast fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
+  const spOK  = await preload(spUrl);
+  let spAgeMs = NaN;
+  if (spOK) spAgeMs = await spImageAgeMs(spUrl);
+  const spAgeUsed = Number.isFinite(spAgeMs) ? spAgeMs : (Date.now() - latest.ts);
+  const spAgeSec  = Math.round(spAgeUsed/1000);
+
+  // 1) SP prioritaire si image ≤ 1 min
+  if (spOK && spAgeUsed <= SP_FRESH_MS) {
+    await renderFrom(spUrl, {status:'ok', text:'SP'});
+    showBannerOn(false);
+    note.textContent = `${diag}\nsource: SP (prioritaire ≤1min) • Δimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\nTokenSP:${lastTokenOk?'OK':'KO'} • last token:${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}\nlast fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
     return;
   }
 
-  // 2) Si trop vieux et SP KO → erreur
-  if(tooOld){
-    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (données >10min)'});
-    note.textContent = `${diag}\nsource: KO\nTokenSP: ${lastTokenOk?'OK':'KO'} • last token: ${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}`;
+  // 2) SP dispo mais image ≥ 10 min → SP + bandeau
+  if (spOK && spAgeUsed >= STALE_MS) {
+    await renderFrom(spUrl, {status:'err', text:'SP (données >10min)'});
+    showBannerOn(true);
+    note.textContent = `${diag}\nsource: SP (trop vieux) • Δimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}`;
     return;
   }
 
-  // 3) Miroir horodaté GitHub
+  // 3) Si spOK et 1min < Δimage < 10min → on préfère le miroir (plus frais)
+  //    → on continue vers miroir (logique miroir inchangée)
+
+  // Miroir horodaté GitHub
   if(await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true)){
     lastMirror[k]={url:latest.url,time:Date.now()};
-    note.textContent = `${diag}\nsource: Miroir\nTokenSP: ${lastTokenOk?'OK':'KO'} • last token: ${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}`;
+    note.textContent = `${diag}\nsource: Miroir\nTokenSP:${lastTokenOk?'OK':'KO'} • last token:${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}\nlast fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
     return;
   }
 
-  // 4) Cache miroir 60 s
+  // Cache miroir 60 s
   const cached=lastMirror[k];
   if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
@@ -270,7 +293,7 @@ async function tick(){
 setInterval(tick, REFRESH_MS);
 tick();
 
-/* Charger le token depuis SharePoint au démarrage, puis périodiquement */
+/* Token SP au démarrage + toutes 10 min */
 loadTokenFromSP();
 setInterval(loadTokenFromSP, TOKEN_REFRESH_MS);
 </script>
