@@ -89,16 +89,18 @@ const GH_API=`https://api.github.com/repos/Flo-App-bxl/TDID-Live/contents`;
 const REFRESH_MS=6000;            // boucle d'affichage
 const FETCH_MIN=60000;            // sans token: latest.json ≤ 1/min
 const API_MIN=10000;              // avec token: latest.json ≤ 10 s
-const STALE_MS=10*60*1000;        // données > 10 min → stale
+const STALE_MS=10*60*1000;        // >10 min
 const CACHE_MIRROR_TTL=60000;     // miroir cache ≤ 60 s
-const TOKEN_REFRESH_MS=10*60*1000;// rechargement token SP toutes 10 min
-const SP_FRESH_MS=60*1000;        // SP prioritaire si image ≤ 1 min
+const TOKEN_REFRESH_MS=10*60*1000;// token SP toutes 10 min
+// Nouvelles règles SP
+const SP_WARN_MS = 5*60*1000;     // ≤5 min : SP sans bandeau ; (5,10] : SP avec bandeau
+const SP_MAX_MS  = 10*60*1000;    // >10 min : on préfère le miroir
 
 /* SharePoint (binaire direct via download.aspx) */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 function spImgUrl(k){
-  const file = `live_${k}.png`; // nom de fichier réel SP
+  const file = `live_${k}.png`;
   const src  = `${SP_FOLDER}/${file}`;
   return {
     url: `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}&t=${Date.now()}`,
@@ -126,14 +128,12 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* ====== Splash vidéo robuste ====== */
+/* ====== Splash vidéo : robuste multi-navigateurs ====== */
 let splashActive=true;
 function endSplash(){ if(!splashActive) return; splash.style.display='none'; splashActive=false; try{splashVid.pause();}catch{} }
 function tryPlayVideo(){
   if(!splashVid) return Promise.resolve();
-  splashVid.muted = true;
-  splashVid.playsInline = true;
-  splashVid.autoplay = true;
+  splashVid.muted = true; splashVid.playsInline = true; splashVid.autoplay = true;
   return splashVid.play().catch(()=>{});
 }
 document.addEventListener('DOMContentLoaded', ()=>{ tryPlayVideo(); });
@@ -141,10 +141,10 @@ setTimeout(()=>{ tryPlayVideo(); }, 600);
 splashVid?.addEventListener('canplay', ()=>{ tryPlayVideo(); });
 skipBtn?.addEventListener('click', endSplash);
 setTimeout(endSplash, 8000);
-// bouton manuel si vraiment bloqué
+// bouton manuel si bloqué
 (function ensureStartButton(){
-  const box = document.querySelector('.splash-video');
-  const btn = document.createElement('button');
+  const box=document.querySelector('.splash-video');
+  const btn=document.createElement('button');
   btn.textContent='Démarrer';
   btn.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 14px;border-radius:10px;border:1px solid #444;background:#141923;color:#fff;z-index:3;display:none';
   box.appendChild(btn);
@@ -179,19 +179,8 @@ async function spImageAgeMs(spUrl){
   return age;
 }
 
-/* ====== Copie locale (Blob) si SP trop vieux ====== */
-async function fetchImageAsBlob(url){
-  const r = await fetch(url, { cache:'no-store' });
-  if(!r.ok) throw new Error('HTTP '+r.status);
-  return await r.blob();
-}
-function blobToObjectURL(blob){ return URL.createObjectURL(blob); }
-async function makeSpLocalCopy(spUrl, depotKey){
-  const orig = await fetchImageAsBlob(spUrl);
-  const logicalName = `live_${depotKey}2.jpg`;
-  const url = blobToObjectURL(orig);
-  return { url, name: logicalName };
-}
+/* ====== Copie locale (Blob) si SP trop vieux (on ne l’utilise plus ici) ====== */
+// conservé si jamais tu veux réactiver plus tard
 
 /* ====== Token via SP ====== */
 async function loadTokenFromSP(){
@@ -273,10 +262,42 @@ async function fetchLatest(k, forceAPI=false){
 
 /* ====== boucle d'affichage ====== */
 let lastMirror={};
-async function tick(){
-  const k=depot; let diag=`Depot: ${k}\n`;
-  let latest;
 
+async function tick(){
+  const k=depot; let diag=`Depot: ${k}\n`; let decision='';
+
+  /* --- 1) TENTER SP EN PREMIER pour éviter tout appel API inutile --- */
+  const {url: spUrl, name: spName} = spImgUrl(k);
+  const spOK  = await preload(spUrl);
+  let spAgeMs = NaN;
+  if (spOK) spAgeMs = await spImageAgeMs(spUrl);
+  const spAgeUsed = Number.isFinite(spAgeMs) ? spAgeMs : NaN; // si NaN, on ne peut pas décider finement
+
+  if (spOK && Number.isFinite(spAgeUsed)) {
+    const spAgeSec = Math.round(spAgeUsed/1000);
+    if (spAgeUsed <= SP_WARN_MS) {
+      // ≤5 min : SP prioritaire SANS appeler latest.json
+      await renderFrom(spUrl, {status:'ok', text:'SP'});
+      showBannerOn(false);
+      decision = 'SP (≤5min, sans bandeau)';
+      note.textContent =
+        `${diag}\nSP image:${spName}\nSP load:OK\nΔimage=${spAgeSec}s (Last-Modified)\nDécision: ${decision}`;
+      return;
+    }
+    if (spAgeUsed <= SP_MAX_MS) {
+      // (5,10] min : SP prioritaire AVEC bandeau — PAS d’appel API
+      await renderFrom(spUrl, {status:'warn', text:'SP'});
+      showBannerOn(true);
+      decision = 'SP (5–10min, avec bandeau)';
+      note.textContent =
+        `${diag}\nSP image:${spName}\nSP load:OK\nΔimage=${spAgeSec}s (Last-Modified)\nDécision: ${decision}`;
+      return;
+    }
+    // >10 min → on passera au miroir ⇒ on va lire latest.json maintenant
+  }
+
+  /* --- 2) latest.json (miroir) --- */
+  let latest;
   try{ latest=await fetchLatest(k); }
   catch(e){
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});
@@ -286,7 +307,6 @@ async function tick(){
 
   let ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000);
   const tooOld = ageMs>=STALE_MS;
-
   diag += `source latest: ${lastSource[k]} | ${lastHttp[k]}\n`;
   diag += `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}`;
 
@@ -295,45 +315,15 @@ async function tick(){
     catch(err){ diag+=`\n→ refresh API échoué (${err.message})`; }
   }
 
-  /* === SP basé sur l'âge RÉEL de l'image (Last-Modified) === */
-  const {url: spUrl, name: spName} = spImgUrl(k);
-  const spOK  = await preload(spUrl);
-  let spAgeMs = NaN;
-  if (spOK) spAgeMs = await spImageAgeMs(spUrl);
-  const spAgeUsed = Number.isFinite(spAgeMs) ? spAgeMs : (Date.now() - latest.ts);
-  const spAgeSec  = Math.round(spAgeUsed/1000);
-  const spState   = spOK ? 'OK' : 'KO';
-
-  // 1) SP prioritaire si image ≤ 1 min
-  if (spOK && spAgeUsed <= SP_FRESH_MS) {
-    await renderFrom(spUrl, {status:'ok', text:'SP'});
-    showBannerOn(false);
-    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
-    return;
-  }
-
-  // 2) SP dispo mais image ≥ 10 min → fabriquer une copie locale et l’afficher
-  if (spOK && spAgeUsed >= STALE_MS) {
-    try{
-      const copy = await makeSpLocalCopy(spUrl, k); // {url, name: live_<k>2.jpg}
-      await renderFrom(copy.url, {status:'err', text:'SP (copie locale)'});
-      showBannerOn(true);
-      note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\n→ Affichage COPIE: ${copy.name} (locale)`;
-      return;
-    }catch(e){
-      // si la copie échoue, on continue vers miroir/cache/erreur
-      diag += `\n→ copie locale échouée (${e.message||e})`;
-    }
-  }
-
-  // 3) Si spOK et 1–10 min → on préfère le miroir (plus frais)
+  // Afficher le miroir si possible
   if(await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true)){
     lastMirror[k]={url:latest.url,time:Date.now()};
-    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nsource:Miroir\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
+    decision = decision || 'Miroir (SP >10min ou SP KO)';
+    note.textContent = `${diag}\nsource:Miroir\nDécision: ${decision}\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
     return;
   }
 
-  // 4) Cache miroir ≤60 s
+  // Cache miroir ≤60 s
   const cached=lastMirror[k];
   if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
@@ -348,7 +338,7 @@ async function tick(){
 setInterval(tick, REFRESH_MS);
 tick();
 
-/* Token SP au démarrage + toutes 10 min */
+/* Token SP au démarrage + toutes 10 min (utile si tu utilises l’API GitHub) */
 loadTokenFromSP();
 setInterval(loadTokenFromSP, TOKEN_REFRESH_MS);
 </script>
