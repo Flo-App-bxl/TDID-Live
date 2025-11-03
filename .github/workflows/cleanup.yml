@@ -5,10 +5,10 @@ name: Auto-clean folders
 
 on:
   schedule:
-    - cron: "*/2 * * * *"  # toutes les 3 minutes
+    - cron: "*/3 * * * *"  # toutes les 3 minutes
   workflow_dispatch:         # permet aussi de le lancer à la main
 
-# Empêche plusieurs exécutions concurrentes du même workflow sur la même branche
+# Évite que plusieurs runs "Auto-clean" tournent en même temps sur la même branche
 concurrency:
   group: auto-clean-${{ github.ref }}
   cancel-in-progress: true
@@ -45,27 +45,8 @@ jobs:
             echo "→ $COUNT fichiers détectés"
 
             if [ "$COUNT" -gt "$MAX_FILES" ]; then
-              echo "⚠️ Trop de fichiers ($COUNT > $MAX_FILES), on garde seulement le plus récent..."
-
-              # Récupérer le fichier le plus récent (par date de modification)
-              LATEST_FILE=$(find "$FOLDER" -type f -printf '%T@ %p\n' \
-                | sort -nr \
-                | head -n 1 \
-                | cut -d' ' -f2-)
-
-              if [ -z "$LATEST_FILE" ]; then
-                echo "❌ Impossible de déterminer le fichier le plus récent, on ne supprime rien."
-                continue
-              fi
-
-              echo "🟢 Fichier le plus récent conservé : $LATEST_FILE"
-
-              # Supprimer tous les fichiers sauf le plus récent
-              find "$FOLDER" -type f ! -path "$LATEST_FILE" -print -delete
-
-              # Optionnel : supprimer les dossiers vides restants
-              find "$FOLDER" -type d -empty -print -delete
-
+              echo "⚠️ Trop de fichiers ($COUNT > $MAX_FILES), suppression complète du dossier $FOLDER..."
+              rm -rf "$FOLDER"
             else
               echo "✅ OK : $FOLDER contient $COUNT fichiers (<= $MAX_FILES), rien à faire."
             fi
@@ -85,14 +66,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          git commit -m "Auto-clean: ne garde que le fichier le plus récent"
+          git commit -m "Auto-clean: suppression automatique des dossiers remplis"
 
           BRANCH="${GITHUB_REF_NAME}"
+
+          # S'assurer qu'on est bien sur la branche suivie
+          git fetch origin "$BRANCH"
+          git checkout "$BRANCH"
 
           # On tente plusieurs fois en se rebasant si nécessaire
           for i in 1 2 3; do
             git pull --rebase origin "$BRANCH" || true
-            if git push origin "$BRANCH"; then
+            if git push origin HEAD:"$BRANCH"; then
               echo "✅ Push réussi."
               exit 0
             fi
