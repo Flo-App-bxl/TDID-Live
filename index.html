@@ -98,9 +98,8 @@ const SP_FRESH_MS=60*1000;        // SP prioritaire si image ≤ 1 min
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 function spImgUrl(k){
-  const file = `live_${k}.png`; // nom de fichier réel
-  const src = `${SP_FOLDER}/${file}`;
-  // URL binaire + anti-cache query
+  const file = `live_${k}.png`; // nom de fichier réel SP
+  const src  = `${SP_FOLDER}/${file}`;
   return {
     url: `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}&t=${Date.now()}`,
     name: file
@@ -113,7 +112,7 @@ function spTokenUrl(){
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}&t=${Date.now()}`;
 }
 
-/* ====== UI ====== */
+/* ====== UI refs ====== */
 const img=document.getElementById('view'), note=document.getElementById('note'),
       led=document.getElementById('led'), stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
@@ -127,29 +126,38 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* ====== Splash vidéo : robustesse mobile ====== */
+/* ====== Splash vidéo robuste ====== */
 let splashActive=true;
 function endSplash(){ if(!splashActive) return; splash.style.display='none'; splashActive=false; try{splashVid.pause();}catch{} }
 function tryPlayVideo(){
-  if(!splashVid) return;
+  if(!splashVid) return Promise.resolve();
   splashVid.muted = true;
   splashVid.playsInline = true;
-  const p = splashVid.play();
-  if(p && typeof p.then==='function'){
-    p.then(()=>{}).catch(()=>{ /* silencieux */ });
-  }
+  splashVid.autoplay = true;
+  return splashVid.play().catch(()=>{});
 }
-tryPlayVideo();
-setTimeout(tryPlayVideo, 600); // 2e essai iOS
-splashVid?.addEventListener('ended', endSplash);
+document.addEventListener('DOMContentLoaded', ()=>{ tryPlayVideo(); });
+setTimeout(()=>{ tryPlayVideo(); }, 600);
+splashVid?.addEventListener('canplay', ()=>{ tryPlayVideo(); });
 skipBtn?.addEventListener('click', endSplash);
-// Timeout court pour ne pas bloquer l'app si la vidéo est bloquée
-setTimeout(endSplash, 6000);
+setTimeout(endSplash, 8000);
+// bouton manuel si vraiment bloqué
+(function ensureStartButton(){
+  const box = document.querySelector('.splash-video');
+  const btn = document.createElement('button');
+  btn.textContent='Démarrer';
+  btn.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 14px;border-radius:10px;border:1px solid #444;background:#141923;color:#fff;z-index:3;display:none';
+  box.appendChild(btn);
+  let retries=0;
+  const loop=()=>{ tryPlayVideo().then(()=>{ if(splashVid.readyState>2 && !splashVid.paused){btn.style.display='none';}else if(++retries<=3){setTimeout(loop,500);}else{btn.style.display='block';} }); };
+  loop();
+  btn.addEventListener('click', async()=>{ await tryPlayVideo(); endSplash(); });
+})();
 
 /* ====== Helpers ====== */
 function setTop(status,label){led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleString()}`;}
 function showBannerOn(on){banner.style.display=on?'block':'none';}
-function preload(src){return new Promise(res=>{const t=new Image();t.onload=()=>res(true);t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t=' + Date.now();});}
+function preload(src){return new Promise(res=>{const t=new Image();t.onload=()=>res(true);t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
 function renderFrom(src,statusLabel){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=src+(src.includes('?')?'&':'?')+'bypass='+Date.now();setTop(statusLabel.status,statusLabel.text);res(true)};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false)};t.src=src+(src.includes('?')?'&':'?')+'check='+Date.now();});}
 
 /* ====== Âge réel image SP (Last-Modified) ====== */
@@ -171,6 +179,20 @@ async function spImageAgeMs(spUrl){
   return age;
 }
 
+/* ====== Copie locale (Blob) si SP trop vieux ====== */
+async function fetchImageAsBlob(url){
+  const r = await fetch(url, { cache:'no-store' });
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return await r.blob();
+}
+function blobToObjectURL(blob){ return URL.createObjectURL(blob); }
+async function makeSpLocalCopy(spUrl, depotKey){
+  const orig = await fetchImageAsBlob(spUrl);
+  const logicalName = `live_${depotKey}2.jpg`;
+  const url = blobToObjectURL(orig);
+  return { url, name: logicalName };
+}
+
 /* ====== Token via SP ====== */
 async function loadTokenFromSP(){
   try{
@@ -186,7 +208,7 @@ async function loadTokenFromSP(){
 }
 let lastTokenOk = false, lastTokenAt = 0;
 
-/* ====== latest.json (RAW→CDN→API→RAW2, API prioritaire si token) ====== */
+/* ====== latest.json fetch chain ====== */
 function apiHeaders(){
   const pat = localStorage.getItem('tdid_pat')||'';
   const h = {'Accept':'application/vnd.github.v3.raw','Cache-Control':'no-store'};
@@ -274,11 +296,10 @@ async function tick(){
   }
 
   /* === SP basé sur l'âge RÉEL de l'image (Last-Modified) === */
-  const {url:spUrl, name:spName} = spImgUrl(k);
-  const spOK  = await preload(spUrl);              // test de chargement
+  const {url: spUrl, name: spName} = spImgUrl(k);
+  const spOK  = await preload(spUrl);
   let spAgeMs = NaN;
-  if (spOK) spAgeMs = await spImageAgeMs(spUrl);   // HEAD → GET
-
+  if (spOK) spAgeMs = await spImageAgeMs(spUrl);
   const spAgeUsed = Number.isFinite(spAgeMs) ? spAgeMs : (Date.now() - latest.ts);
   const spAgeSec  = Math.round(spAgeUsed/1000);
   const spState   = spOK ? 'OK' : 'KO';
@@ -287,16 +308,22 @@ async function tick(){
   if (spOK && spAgeUsed <= SP_FRESH_MS) {
     await renderFrom(spUrl, {status:'ok', text:'SP'});
     showBannerOn(false);
-    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\nTokenSP:${lastTokenOk?'OK':'KO'} • last token:${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
+    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
     return;
   }
 
-  // 2) SP dispo mais image ≥ 10 min → SP + bandeau
+  // 2) SP dispo mais image ≥ 10 min → fabriquer une copie locale et l’afficher
   if (spOK && spAgeUsed >= STALE_MS) {
-    await renderFrom(spUrl, {status:'err', text:'SP (données >10min)'});
-    showBannerOn(true);
-    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\n→ bandeau actif`;
-    return;
+    try{
+      const copy = await makeSpLocalCopy(spUrl, k); // {url, name: live_<k>2.jpg}
+      await renderFrom(copy.url, {status:'err', text:'SP (copie locale)'});
+      showBannerOn(true);
+      note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\n→ Affichage COPIE: ${copy.name} (locale)`;
+      return;
+    }catch(e){
+      // si la copie échoue, on continue vers miroir/cache/erreur
+      diag += `\n→ copie locale échouée (${e.message||e})`;
+    }
   }
 
   // 3) Si spOK et 1–10 min → on préfère le miroir (plus frais)
