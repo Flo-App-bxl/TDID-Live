@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TDID Live – SP prioritaire + bandeau si miroir >5min</title>
+<title>TDID Live – SP prioritaire, Miroir avec force API +60s, bandeau SP uniquement</title>
 <style>
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -27,17 +27,21 @@
   }
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
+  /* Splash vidéo */
   .splash{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);
   }
   .splash-video{ position:relative; width:min(900px,92vw); aspect-ratio:16/9; }
-  .splash-video video, .splash-video .fallback {
+  .splash-video video{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px;
+    z-index:1; /* vidéo au-dessus */
   }
   .splash-video .fallback{
-    display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1.35;
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-weight:600; line-height:1.35;
     background:#0f1115; border:1px solid var(--line); color:#eaeef5;
+    z-index:0; /* texte en dessous */
   }
   .splash-video .skip{
     position:absolute; right:10px; bottom:10px; z-index:2;
@@ -64,7 +68,7 @@
   <div class="wrap">
     <div class="splash" id="splash">
       <div class="splash-video">
-        <video id="splashVideo" muted playsinline autoplay preload="auto"
+        <video id="splashVideo" muted playsinline autoplay preload="auto" style="z-index:1"
                poster="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg">
           <source src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro.mp4" type="video/mp4">
         </video>
@@ -78,7 +82,7 @@
   <div class="note" id="note"></div>
 
 <script>
-/* ====== Config ====== */
+/* ====== Constantes ====== */
 const GH_USER   = "Flo-App-bxl";
 const GH_REPO   = "TDID-Live";
 const GH_BRANCH = "main";
@@ -90,10 +94,12 @@ const MIRROR_DIR = { brel:"mirror_brel", delta:"mirror_delta", erasme:"mirror_er
 const ERR_IMG    = `${GH_RAW}/TDID_Erreur.png`;
 
 /* timings */
-const REFRESH_MS = 6000;
-const FETCH_MIN  = 60*1000;
-const BANNER_GT5 = 5*60*1000;   // Bandeau ON si âge miroir > 5 min
-const CACHE_MIRROR_TTL = 60*1000;
+const REFRESH_MS       = 6000;
+const FETCH_MIN        = 60*1000;        // cadence min lecture latest.json sans force
+const MIRROR_FORCE_MS  = 60*1000;        // force API toutes 60s en mode miroir
+const BANNER_GT5       = 5*60*1000;      // (SP) bandeau ON si âge miroir > 5 min
+const MIRROR_ERR_10    = 10*60*1000;     // (miroir) erreur si âge > 10 min
+const CACHE_MIRROR_TTL = 60*1000;        // cache miroir 60s
 
 /* SharePoint */
 const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
@@ -105,7 +111,7 @@ const DATA_SP = {
   erasme: { img: spRaw("live_erasme.png") }
 };
 
-/* ====== UI ====== */
+/* ====== UI refs ====== */
 const img=document.getElementById('view'),note=document.getElementById('note'),
       led=document.getElementById('led'),stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
@@ -115,7 +121,7 @@ const btns={brel:document.getElementById('brel'),delta:document.getElementById('
 
 let depot=localStorage.getItem('tdid_depot')||'brel';
 function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===depot);}}
-for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
+for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;enterMirror(false);tick();};}
 setActive();
 
 /* ====== Vidéo intro ====== */
@@ -129,12 +135,40 @@ skipBtn?.addEventListener('click',endSplash);
 setTimeout(endSplash,8000);
 
 /* ====== État ====== */
-let latestData={brel:null,delta:null,erasme:null};
+let latestData={brel:null,delta:null,erasme:null}; // {ts,url}
 let lastFetchAt={brel:0,delta:0,erasme:0};
 let lastHttp={brel:'',delta:'',erasme:''};
 let lastSource={brel:'',delta:'',erasme:''};
-let lastMirror={brel:null,delta:null,erasme:null};
+let lastMirror={brel:null,delta:null,erasme:null}; // {url,time}
 let forceFetch=true;
+
+/* SP figé */
+const spState={
+  brel:{hist:[],frozen:false,lastSig:null},
+  delta:{hist:[],frozen:false,lastSig:null},
+  erasme:{hist:[],frozen:false,lastSig:null}
+};
+const FREEZE_THRESHOLD=5;
+
+/* Mode miroir & force API timer */
+let isMirror=false;
+let mirrorForceTimer=null;
+function enterMirror(startupKick=true){
+  if(!isMirror){
+    isMirror=true;
+    // kick API immédiat à l’entrée en mode miroir
+    if(startupKick) fetchLatest(depot,{forceApi:true}).catch(()=>{});
+    // boucle force API chaque 60 s
+    if(mirrorForceTimer) clearInterval(mirrorForceTimer);
+    mirrorForceTimer=setInterval(()=>{
+      if(isMirror) fetchLatest(depot,{forceApi:true}).catch(()=>{});
+    }, MIRROR_FORCE_MS);
+  }
+}
+function leaveMirror(){
+  isMirror=false;
+  if(mirrorForceTimer){ clearInterval(mirrorForceTimer); mirrorForceTimer=null; }
+}
 
 /* ====== Helpers ====== */
 const cbMinute=u=>u+(u.includes('?')?'&':'?')+'x_bypass='+Math.floor(Date.now()/60000);
@@ -143,74 +177,165 @@ function showBanner(show){banner.style.display=show?'block':'none';}
 function preload(src,withCred=false){return new Promise(res=>{const t=new Image();if(withCred)t.referrerPolicy='no-referrer-when-downgrade';t.onload=()=>res(true);t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
 function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text);res(true);};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false);};t.src=exact?src:(src+(src.includes('?')?'&':'?')+'t='+Date.now());});}
 
-/* ====== Fetch latest.json ====== */
-async function fetchLatest(k){
-  const now=Date.now();
-  if(!forceFetch&&now-lastFetchAt[k]<FETCH_MIN&&latestData[k])return latestData[k];
-  const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
-  const urlRAW=`${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`;
-  const urlCDN=`${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`;
-  const urlAPI=`${GH_API}${path}?ref=${GH_BRANCH}`;
-  let trace=[],source='-';
-  async function tryJson(url,opt,tag){try{const r=await fetch(url,opt);trace.push(`${tag}:${r.status}`);if(!r.ok)return null;source=tag;return await r.json();}catch(e){trace.push(`${tag}:fail`);return null;}}
-  let j=await tryJson(urlRAW,{cache:'no-store'},'RAW');
-  if(!j)j=await tryJson(urlCDN,{cache:'no-store',headers:{'Accept':'application/json'}},'CDN');
-  if(!j)j=await tryJson(urlAPI,{cache:'no-store',headers:{'Accept':'application/vnd.github.v3.raw'}},'API');
-  lastFetchAt[k]=now;lastHttp[k]=trace.join(' ');lastSource[k]=source;
-  if(!j)throw new Error('all fetch attempts failed');
-  const it=j?.items?.[k];if(!it?.ts)throw new Error('bad json');
-  let imgUrl=it.url;if(!imgUrl){const f=(it.file||'').split('/').pop();if(!f)throw new Error('no file');imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
-  latestData[k]={ts:Number(it.ts)*1000,url:imgUrl};forceFetch=false;return latestData[k];
+/* SP headers → signature */
+async function getSpHeaders(url){
+  async function tryMeth(m){try{const r=await fetch(url,{method:m,cache:'no-store'});if(!r.ok)return null;const lm=r.headers.get('Last-Modified')||r.headers.get('x-ms-file-last-modified')||r.headers.get('x-ms-last-modified')||'n/a';const clen=r.headers.get('Content-Length')||'n/a';return {lm,clen,sig:`${lm}|${clen}`};}catch{return null;}}
+  return (await tryMeth('HEAD')) || (await tryMeth('GET'));
+}
+function updateSpFreeze(k,sig){
+  const st=spState[k];
+  if(sig && st.lastSig===sig){st.hist.push(sig); if(st.hist.length>FREEZE_THRESHOLD)st.hist.shift();}
+  else{st.hist=sig?[sig]:[]; st.frozen=false;}
+  st.lastSig=sig||st.lastSig;
+  if(st.hist.length===FREEZE_THRESHOLD && st.hist.every(s=>s===st.lastSig)) st.frozen=true;
 }
 
-/* ====== Tick ====== */
-async function tick(){
-  const k=depot;let diag=`Depot: ${k}\n`;showBanner(false);
+/* ====== latest.json ====== */
+async function fetchLatest(k, opts={}){
+  const {forceApi=false} = opts;
+  const now=Date.now();
+  if(!forceApi && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latestData[k]) return latestData[k];
 
-  // SP prioritaire
-  const sp=DATA_SP[k];const spOK=await preload(sp.img,true);
-  if(spOK){
+  const path = k==='brel'?'/time_brel/latest.json'
+             : k==='delta'?'/time_delta/latest.json'
+             : '/time_erasme/latest.json';
+
+  const urlRAW = `${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`;
+  const urlCDN = `${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`;
+  const urlAPI = `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`; // bust api proxies a bit
+
+  let trace=[], source='-';
+  async function tryJson(url, init, tag){
+    try{
+      const r=await fetch(url, init);
+      trace.push(`${tag}:${r.status}`);
+      if(!r.ok) return null;
+      source=tag;
+      return await r.json();
+    }catch(e){ trace.push(`${tag}:fail`); return null; }
+  }
+
+  let j=null;
+  if(forceApi){
+    // Forcer API d'abord, puis RAW/CDN en secours
+    j = await tryJson(urlAPI, {cache:'no-store', headers:{'Accept':'application/vnd.github.v3.raw'}}, 'API*');
+    if(!j) j = await tryJson(urlRAW, {cache:'no-store'}, 'RAW');
+    if(!j) j = await tryJson(urlCDN, {cache:'no-store', headers:{'Accept':'application/json'}}, 'CDN');
+  }else{
+    // Normal: RAW→CDN→API
+    j = await tryJson(urlRAW, {cache:'no-store'}, 'RAW');
+    if(!j) j = await tryJson(urlCDN, {cache:'no-store', headers:{'Accept':'application/json'}}, 'CDN');
+    if(!j) j = await tryJson(urlAPI, {cache:'no-store', headers:{'Accept':'application/vnd.github.v3.raw'}}, 'API');
+  }
+
+  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
+  if(!j) throw new Error('all fetch attempts failed');
+
+  const it=j?.items?.[k]; if(!it?.ts) throw new Error('bad json');
+  let imgUrl=it.url;
+  if(!imgUrl){
+    const f=(it.file||'').split('/').pop();
+    if(!f) throw new Error('no file');
+    imgUrl = `${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
+  }
+
+  latestData[k]={ts:Number(it.ts)*1000, url:imgUrl};
+  forceFetch=false;
+  return latestData[k];
+}
+
+/* ====== Tick principal ====== */
+async function tick(){
+  const k=depot; let diag=`Depot: ${k}\n`; showBanner(false);
+
+  // Vérif SP (signature + dispo)
+  const sp=DATA_SP[k];
+  const h=await getSpHeaders(sp.img);
+  if(h) updateSpFreeze(k,h.sig); else { spState[k].frozen=false; spState[k].hist=[]; }
+  const frozen = spState[k].frozen;
+  const spOK = h && await preload(sp.img,true);
+
+  if(spOK && !frozen){
+    // --- MODE SP ---
+    leaveMirror();
     await renderFrom(sp.img,{status:'ok',text:'SP'});
     setTop('ok','SP');
-    (async()=>{
+    // calc âge miroir en fond → bandeau (SP UNIQUEMENT)
+    (async ()=>{
       try{
-        const latest=await fetchLatest(k);
-        const ageMs=Date.now()-latest.ts;
-        const ageSec=Math.round(ageMs/1000);
-        const bannerOn=ageMs>BANNER_GT5;
+        const latest=await fetchLatest(k); // pas forcé : RAW→CDN→API (API en dernier)
+        const ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000);
+        const bannerOn = ageMs > BANNER_GT5; // Bandeau ON si >5min (SP only)
         showBanner(bannerOn);
-        note.textContent=`${diag}Mode SP (no API)\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\nâge miroir • Δ=${ageSec}s → ${bannerOn?'Bandeau ON (>5min)':'Bandeau OFF (≤5min)'}\nsource: SP`;
-      }catch(e){note.textContent=`${diag}Mode SP (no API)\nlatest.json KO (${lastHttp[k]||e.message})\nsource: SP`;}
+        note.textContent =
+          `${diag}Mode SP (no API pour l'affichage)\nSP sig: ${h.sig} freeze:${spState[k].hist.length}/${FREEZE_THRESHOLD}\n`+
+          `source latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
+          `âge miroir • Δ=${ageSec}s → ${bannerOn?'Bandeau ON (>5min)':'Bandeau OFF (≤5min)'}\nsource: SP`;
+      }catch(e){
+        note.textContent =
+          `${diag}Mode SP (no API pour l'affichage)\nSP sig: ${h?.sig||'n/a'} freeze:${spState[k].hist.length}/${FREEZE_THRESHOLD}\n`+
+          `latest.json KO (${lastHttp[k]||e.message})\nsource: SP`;
+      }
     })();
     return;
   }
 
-  // Mode miroir
+  // --- MODE MIROIR ---
+  enterMirror(true); // kick API immédiat si on n'y était pas
+
   let latest=null;
-  try{latest=await fetchLatest(k);}catch(e){await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});note.textContent=`${diag}Mode Miroir (API possible)\nlatest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;return;}
-  const ageMs=Date.now()-latest.ts,ageSec=Math.round(ageMs/1000);
-  const okMir=await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true);
-  if(okMir){
-    lastMirror[k]={url:latest.url,time:Date.now()};
-    const bannerOn=ageMs>BANNER_GT5;
-    showBanner(bannerOn);
-    note.textContent=`${diag}Mode Miroir (API possible)\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\nâge miroir • Δ=${ageSec}s → ${bannerOn?'Bandeau ON (>5min)':'Bandeau OFF (≤5min)'}\nsource: Miroir`;
+  try{
+    // on force l'API au premier tour en miroir si possible (sinon RAW/CDN)
+    latest = await fetchLatest(k,{forceApi:true});
+  }catch(e){
+    // fallback cache 60s
+    const cached=lastMirror[k];
+    if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+      await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
+      note.textContent = `${diag}Mode Miroir (API forcée/normale KO)\nlatest.json KO (${lastHttp[k]||e.message})\nSP figé:${frozen?'oui':'non'}\n→ Affichage cache ≤60s`;
+      return;
+    }
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});
+    note.textContent = `${diag}Mode Miroir (API forcée/normale KO)\nlatest.json KO (${lastHttp[k]||e.message})\nSP figé:${frozen?'oui':'non'}\n→ Pas de données`;
     return;
   }
 
+  const ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000);
+
+  // règle miroir : erreur si âge > 10 min (pas de bandeau en mode miroir)
+  if(ageMs > MIRROR_ERR_10){
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'});
+    note.textContent =
+      `${diag}Mode Miroir (API active/60s)\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
+      `âge miroir • Δ=${ageSec}s (>600s) → Écran erreur\nSP figé:${frozen?'oui':'non'}`;
+    return;
+  }
+
+  // sinon, afficher miroir (sans bandeau en mode miroir)
+  const okMir = await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true);
+  if(okMir){
+    lastMirror[k]={url:latest.url,time:Date.now()};
+    showBanner(false); // bandeau jamais en mode miroir
+    note.textContent =
+      `${diag}Mode Miroir (API active/60s)\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
+      `âge miroir • Δ=${ageSec}s (≤600s)\nSP figé:${frozen?'oui':'non'}${frozen?'\n⚠️ SP figé — on surveille une nouvelle signature pour revenir sur SP.':''}`;
+    return;
+  }
+
+  // miroir KO → cache 60s → sinon erreur
   const cached=lastMirror[k];
-  if(cached&&(Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+  if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
-    note.textContent=`${diag}→ Miroir KO, affichage cache ≤60s`;
-  }else{
+    note.textContent = `${diag}Mode Miroir (API active/60s)\n→ Miroir KO, affichage cache ≤60s\nSP figé:${frozen?'oui':'non'}`;
+  } else {
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'});
-    note.textContent=`${diag}→ Erreur : miroir KO et cache expiré`;
+    note.textContent = `${diag}Mode Miroir (API active/60s)\n→ Erreur : miroir KO et cache expiré\nSP figé:${frozen?'oui':'non'}`;
   }
 }
 
 /* ====== Start ====== */
-setInterval(tick,REFRESH_MS);
-tick();
+setInterval(tick, REFRESH_MS);
+tick(); // au démarrage : si on tombe en miroir, enterMirror() forcera un premier appel API
 </script>
 </body>
 </html>
