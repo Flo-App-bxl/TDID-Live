@@ -19,14 +19,30 @@
   .wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
   .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.9em;text-align:center;white-space:pre-line;max-width:92vw}
-  .banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(242,182,54,0.7);color:#000;padding:16px 24px;border-radius:14px;font-weight:700;font-size:1.4em;z-index:20;display:none;overflow:hidden;white-space:nowrap;width:80vw;text-align:center;box-shadow:0 0 14px rgba(0,0,0,0.4)}
-  .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite}
-  @keyframes scrollText{0%{transform:translateX(0)}100%{transform:translateX(-100%)}}
-  .splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,25,35,.9);z-index:30;backdrop-filter:blur(4px)}
-  .splash-video{position:relative;width:min(900px,92vw);aspect-ratio:16/9}
-  .splash-video video,.splash-video .fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px}
-  .splash-video .fallback{display:flex;align-items:center;justify-content:center;font-weight:600;line-height:1.35;background:#0f1115;border:1px solid var(--line);color:#eaeef5}
-  .splash-video .skip{position:absolute;right:10px;bottom:10px;z-index:2;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#141923;color:#fff;cursor:pointer;opacity:.9}
+  .banner{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:rgba(242,182,54,0.7);color:#000;padding:16px 24px;border-radius:14px;
+    font-weight:700;font-size:1.4em;z-index:20;display:none;overflow:hidden;white-space:nowrap;width:80vw;text-align:center;
+    box-shadow:0 0 14px rgba(0,0,0,0.4);
+  }
+  .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
+  @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
+  .splash{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);
+  }
+  .splash-video{ position:relative; width:min(900px,92vw); aspect-ratio:16/9; }
+  .splash-video video, .splash-video .fallback {
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px;
+  }
+  .splash-video .fallback{
+    display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1.35;
+    background:#0f1115; border:1px solid var(--line); color:#eaeef5;
+  }
+  .splash-video .skip{
+    position:absolute; right:10px; bottom:10px; z-index:2;
+    padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#141923; color:#fff; cursor:pointer; opacity:.9;
+  }
 </style>
 </head>
 <body>
@@ -62,43 +78,48 @@
   <div class="note" id="note"></div>
 
 <script>
-/* === CONFIG === */
+/* ====== Constantes ====== */
 const GH_RAW="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main";
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const JSDELIVR=`https://cdn.jsdelivr.net/gh/Flo-App-bxl/TDID-Live@main`;
 const GH_API=`https://api.github.com/repos/Flo-App-bxl/TDID-Live/contents`;
 
-const REFRESH_MS=6000;
-const FETCH_MIN=60000;
-const API_MIN=10000;
-const STALE_MS=10*60*1000;
-const CACHE_MIRROR_TTL=60000;
-const TOKEN_REFRESH_MS=10*60*1000;
-const SP_FRESH_MS=60*1000;
+/* Timings */
+const REFRESH_MS=6000;            // boucle d'affichage
+const FETCH_MIN=60000;            // sans token: latest.json ≤ 1/min
+const API_MIN=10000;              // avec token: latest.json ≤ 10 s
+const STALE_MS=10*60*1000;        // données > 10 min → stale
+const CACHE_MIRROR_TTL=60000;     // miroir cache ≤ 60 s
+const TOKEN_REFRESH_MS=10*60*1000;// rechargement token SP toutes 10 min
+const SP_FRESH_MS=60*1000;        // SP prioritaire si image ≤ 1 min
 
-/* SP LINKS */
-const SP_LINKS={
-  brel:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQgb9EDKvfpIqu8a-FbCpmgBOeuVQx3memgiUVs1hs5Rvg?e=iSQQzg",
-  delta:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EWxl5RRwGAlKlXKGUZPtj8gBGWVmD6Ca7r-d_qHUg4K9EA?e=G0ZY2Z",
-  erasme:"https://stibmivb-my.sharepoint.com/:i:/g/personal/florent_legrain_stib_brussels/EQKsOLvrFUtMm3OAxC41BZQBoEg69j0smCZ_xSRq3ZsqVQ?e=NQUnll"
-};
-function spImg(k){return SP_LINKS[k]+"&t="+Date.now();}
-function spFileName(k){return "live_"+k+".png";}
+/* SharePoint (binaire direct via download.aspx) */
+const SP_BASE   = "https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
+const SP_FOLDER = "/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+function spImgUrl(k){
+  const file = `live_${k}.png`; // nom de fichier réel
+  const src = `${SP_FOLDER}/${file}`;
+  // URL binaire + anti-cache query
+  return {
+    url: `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}&t=${Date.now()}`,
+    name: file
+  };
+}
 
-/* SP TOKEN */
-const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
-const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+/* Token (token2.tkt) au même endroit */
 function spTokenUrl(){
-  const src=`${SP_FOLDER}/token2.tkt`;
+  const src = `${SP_FOLDER}/token2.tkt`;
   return `${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(src)}&t=${Date.now()}`;
 }
 
-/* UI */
+/* ====== UI ====== */
 const img=document.getElementById('view'), note=document.getElementById('note'),
       led=document.getElementById('led'), stamp=document.getElementById('stamp'),
-      banner=document.getElementById('banner'), splash=document.getElementById('splash'),
-      splashVid=document.getElementById('splashVideo'), skipBtn=document.getElementById('skipIntro'),
+      banner=document.getElementById('banner'),
+      splash=document.getElementById('splash'),
+      splashVid=document.getElementById('splashVideo'),
+      skipBtn=document.getElementById('skipIntro'),
       btns={brel:document.getElementById('brel'),delta:document.getElementById('delta'),erasme:document.getElementById('erasme')};
 
 let depot=localStorage.getItem('tdid_depot')||'brel';
@@ -106,74 +127,203 @@ function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
 setActive();
 
-/* Splash */
+/* ====== Splash vidéo : robustesse mobile ====== */
 let splashActive=true;
-function endSplash(){if(!splashActive)return;splash.style.display='none';splashActive=false;try{splashVid.pause();}catch{}}
-splashVid?.addEventListener('ended',endSplash);
-skipBtn?.addEventListener('click',endSplash);
-setTimeout(endSplash,10000);
+function endSplash(){ if(!splashActive) return; splash.style.display='none'; splashActive=false; try{splashVid.pause();}catch{} }
+function tryPlayVideo(){
+  if(!splashVid) return;
+  splashVid.muted = true;
+  splashVid.playsInline = true;
+  const p = splashVid.play();
+  if(p && typeof p.then==='function'){
+    p.then(()=>{}).catch(()=>{ /* silencieux */ });
+  }
+}
+tryPlayVideo();
+setTimeout(tryPlayVideo, 600); // 2e essai iOS
+splashVid?.addEventListener('ended', endSplash);
+skipBtn?.addEventListener('click', endSplash);
+// Timeout court pour ne pas bloquer l'app si la vidéo est bloquée
+setTimeout(endSplash, 6000);
 
-/* Helpers */
+/* ====== Helpers ====== */
 function setTop(status,label){led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleString()}`;}
 function showBannerOn(on){banner.style.display=on?'block':'none';}
-function preload(src){return new Promise(res=>{const t=new Image();t.onload=()=>res(true);t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
+function preload(src){return new Promise(res=>{const t=new Image();t.onload=()=>res(true);t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t=' + Date.now();});}
 function renderFrom(src,statusLabel){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=src+(src.includes('?')?'&':'?')+'bypass='+Date.now();setTop(statusLabel.status,statusLabel.text);res(true)};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false)};t.src=src+(src.includes('?')?'&':'?')+'check='+Date.now();});}
 
-/* SP IMAGE AGE */
+/* ====== Âge réel image SP (Last-Modified) ====== */
 async function spImageAgeMs(spUrl){
-  const tryFetch=async(method)=>{try{const r=await fetch(spUrl,{method,cache:'no-store'});if(!r.ok)return NaN;const lm=r.headers.get('Last-Modified')||r.headers.get('x-ms-file-last-modified');if(!lm)return NaN;const ts=Date.parse(lm);if(!Number.isFinite(ts))return NaN;return Date.now()-ts;}catch{return NaN;}};
-  let age=await tryFetch('HEAD');if(Number.isFinite(age))return age;return await tryFetch('GET');
+  const tryFetch = async (method) => {
+    try{
+      const r = await fetch(spUrl, { method, cache:'no-store' });
+      if(!r.ok) return NaN;
+      const lm = r.headers.get('Last-Modified') || r.headers.get('x-ms-file-last-modified') || r.headers.get('x-ms-last-modified');
+      if(!lm) return NaN;
+      const ts = Date.parse(lm);
+      if(!Number.isFinite(ts)) return NaN;
+      return Date.now() - ts;
+    }catch{ return NaN; }
+  };
+  let age = await tryFetch('HEAD');
+  if(Number.isFinite(age)) return age;
+  age = await tryFetch('GET'); // fallback si HEAD refusé
+  return age;
 }
 
-/* TOKEN FROM SP */
+/* ====== Token via SP ====== */
 async function loadTokenFromSP(){
   try{
-    const r=await fetch(spTokenUrl(),{cache:'no-store'});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const raw=(await r.text()).trim();
-    if(raw){const current=localStorage.getItem('tdid_pat')||'';if(current!==raw){localStorage.setItem('tdid_pat',raw);forceFetch=true;}lastTokenOk=true;lastTokenAt=Date.now();}
-    else{lastTokenOk=false;}
-  }catch{lastTokenOk=false;}
+    const r = await fetch(spTokenUrl(), {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const raw = (await r.text()).trim();
+    if(raw){
+      const current = localStorage.getItem('tdid_pat')||'';
+      if(current !== raw){ localStorage.setItem('tdid_pat', raw); forceFetch = true; }
+      lastTokenOk = true; lastTokenAt = Date.now();
+    } else { lastTokenOk = false; }
+  }catch{ lastTokenOk = false; }
 }
-let lastTokenOk=false,lastTokenAt=0;
+let lastTokenOk = false, lastTokenAt = 0;
 
-/* GITHUB JSON */
-function apiHeaders(){const pat=localStorage.getItem('tdid_pat')||'';const h={'Accept':'application/vnd.github.v3.raw','Cache-Control':'no-store'};if(pat)h['Authorization']='Bearer '+pat;return h;}
-function minInterval(){return localStorage.getItem('tdid_pat')?API_MIN:FETCH_MIN;}
+/* ====== latest.json (RAW→CDN→API→RAW2, API prioritaire si token) ====== */
+function apiHeaders(){
+  const pat = localStorage.getItem('tdid_pat')||'';
+  const h = {'Accept':'application/vnd.github.v3.raw','Cache-Control':'no-store'};
+  if(pat){ h['Authorization']='Bearer '+pat; }
+  return h;
+}
+function minInterval(){ return localStorage.getItem('tdid_pat') ? API_MIN : FETCH_MIN; }
 
-let latestCache={},lastFetchAt={},lastHttp={},lastSource={},forceFetch=true;
-for(const k of ['brel','delta','erasme']){latestCache[k]=null;lastFetchAt[k]=0;lastHttp[k]='';lastSource[k]='-';}
+let latestCache={}, lastFetchAt={}, lastHttp={}, lastSource={}, forceFetch=true;
+for(const k of ['brel','delta','erasme']){ latestCache[k]=null; lastFetchAt[k]=0; lastHttp[k]=''; lastSource[k]='-'; }
+
 const cbMinute=u=>u+(u.includes('?')?'&':'?')+'x_bypass='+Math.floor(Date.now()/60000);
 
-async function fetchLatest(k,forceAPI=false){
-  const now=Date.now();const minMs=minInterval();
-  if(!forceAPI&&!forceFetch&&now-lastFetchAt[k]<minMs&&latestCache[k])return latestCache[k];
-  const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
-  const urlRAW=cbMinute(`${GH_RAW}${path}`),urlCDN=cbMinute(`${JSDELIVR}${path}`),urlAPI=`${GH_API}${path}?ref=main`,urlRAW2=cbMinute(`${GH_RAW}${path}`);
-  const hasPAT=!!(localStorage.getItem('tdid_pat')||'');let trace=[],source='-';
-  async function tryJson(url,opt,tag){try{const r=await fetch(url,opt);trace.push(`${tag}:${r.status}`);if(!r.ok)return null;source=tag;return await r.json();}catch{trace.push(`${tag}:fail`);return null;}}
+async function fetchLatest(k, forceAPI=false){
+  const now=Date.now();
+  const minMs=minInterval();
+  if(!forceAPI && !forceFetch && now-lastFetchAt[k]<minMs && latestCache[k]) return latestCache[k];
+
+  const path = k==='brel'?'/time_brel/latest.json' : k==='delta'?'/time_delta/latest.json' : '/time_erasme/latest.json';
+  const urlRAW  = cbMinute(`${GH_RAW}${path}`);
+  const urlCDN  = cbMinute(`${JSDELIVR}${path}`);
+  const urlAPI  = `${GH_API}${path}?ref=main`;
+  const urlRAW2 = cbMinute(`${GH_RAW}${path}`);
+
+  const hasPAT = !!(localStorage.getItem('tdid_pat')||'');
+
+  let trace=[], source='-';
+  async function tryJson(url,opt,tag){
+    try{ const r=await fetch(url,opt); trace.push(`${tag}:${r.status}`); if(!r.ok) return null; source=tag; return await r.json(); }
+    catch{ trace.push(`${tag}:fail`); return null; }
+  }
+
   let j=null;
-  if(hasPAT){j=await tryJson(urlAPI,{cache:'no-store',headers:apiHeaders()},'API(auth)');if(!j)j=await tryJson(urlRAW,{cache:'no-store'},'RAW');if(!j)j=await tryJson(urlCDN,{cache:'no-store'},'CDN');if(!j)j=await tryJson(urlRAW2,{cache:'no-store'},'RAW2');}
-  else{j=await tryJson(urlRAW,{cache:'no-store'},'RAW');if(!j)j=await tryJson(urlCDN,{cache:'no-store'},'CDN');if(!j)j=await tryJson(urlAPI,{cache:'no-store',headers:apiHeaders()},'API');if(!j)j=await tryJson(urlRAW2,{cache:'no-store'},'RAW2');}
-  lastFetchAt[k]=now;lastHttp[k]=trace.join(' ');lastSource[k]=source;
-  if(!j)throw new Error('all fetch failed');
-  const it=j?.items?.[k];if(!it?.ts)throw new Error('bad json');
-  let imgUrl=it.url;if(!imgUrl){const f=(it.file||'').split('/').pop();imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
-  latestCache[k]={ts:Number(it.ts)*1000,url:imgUrl};forceFetch=false;return latestCache[k];
+  if(hasPAT){
+    j = await tryJson(urlAPI, {cache:'no-store', headers: apiHeaders()}, 'API(auth)');
+    if(!j) j = await tryJson(urlRAW,  {cache:'no-store'}, 'RAW');
+    if(!j) j = await tryJson(urlCDN,  {cache:'no-store'}, 'CDN');
+    if(!j) j = await tryJson(urlRAW2, {cache:'no-store'}, 'RAW2');
+  }else{
+    j = await tryJson(urlRAW,  {cache:'no-store'}, 'RAW');
+    if(!j) j = await tryJson(urlCDN,  {cache:'no-store'}, 'CDN');
+    if(!j) j = await tryJson(urlAPI, {cache:'no-store', headers: apiHeaders()}, 'API');
+    if(!j) j = await tryJson(urlRAW2, {cache:'no-store'}, 'RAW2');
+  }
+
+  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
+  if(!j) throw new Error('all fetch attempts failed');
+
+  const it=j?.items?.[k];
+  if(!it?.ts) throw new Error('bad json');
+  let imgUrl=it.url;
+  if(!imgUrl){
+    const f=(it.file||'').split('/').pop();
+    if(!f) throw new Error('no file');
+    imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
+  }
+
+  latestCache[k]={ts:Number(it.ts)*1000, url:imgUrl};
+  forceFetch=false;
+  return latestCache[k];
 }
 
-/* BOUCLE */
+/* ====== boucle d'affichage ====== */
 let lastMirror={};
 async function tick(){
-  const k=depot;let diag=`Depot: ${k}\n`;let latest;
-  try{latest=await fetchLatest(k);}catch(e){await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});note.textContent=`${diag}latest.json KO (${lastHttp[k]||e.message})`;return;}
-  let ageMs=Date.now()-latest.ts,ageSec=Math.round(ageMs/1000),tooOld=ageMs>=STALE_MS;
-  diag+=`source latest: ${lastSource[k]} | ${lastHttp[k]}\nΔ=${ageSec}s → ${tooOld?'STALE':'OK'}`;
-  if(ageMs>60000){try{const ref=await fetchLatest(k,true);latest=ref||latest;diag+=`\n→ refresh API forcé (Δ>60s)`;}catch(err){diag+=`\n→ refresh API échoué (${err.message})`;}}
-  const spUrl=spImg(k),spName=spFileName(k);const spOK=await preload(spUrl);let spAgeMs=NaN;if(spOK)spAgeMs=await spImageAgeMs(spUrl);
-  const spAgeUsed=Number.isFinite(spAgeMs)?spAgeMs:(Date.now()-latest.ts),spAgeSec=Math.round(spAgeUsed/1000);
-  const spState=spOK?'OK':'KO';
-  if(spOK&&spAgeUsed<=SP_FRESH_MS){await renderFrom(spUrl,{status:'ok',text:'SP'});showBannerOn(false);note.textContent=`${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\nTokenSP:${lastTokenOk?'OK':'KO'} • last token:${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;return;}
-  if(spOK&&spAgeUsed>=STALE_MS){await renderFrom(spUrl,{status:'err',text:'SP (données >10min)'});showBannerOn(true);note.textContent=`${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\n→ bandeau actif`;return;}
-  if(await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true)){lastMirror[k]={url:latest.url,time:Date.now()};note.textContent=`${diag}\nSP image:${spName}\nSP load:${spState}\nsource:Miroir\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;return;}
-  const cached=lastMirror[k];if(cached&&(Date.now()-cached.time)<=CACHE_MIRROR_TTL){await renderFrom(c
+  const k=depot; let diag=`Depot: ${k}\n`;
+  let latest;
+
+  try{ latest=await fetchLatest(k); }
+  catch(e){
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});
+    note.textContent = `${diag}latest.json KO (${lastHttp[k]||e.message})\n→ Pas de données`;
+    return;
+  }
+
+  let ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000);
+  const tooOld = ageMs>=STALE_MS;
+
+  diag += `source latest: ${lastSource[k]} | ${lastHttp[k]}\n`;
+  diag += `age(miroir) • Δ=${ageSec}s → ${tooOld?'STALE':'OK'}`;
+
+  if(ageMs>60000){
+    try{ const ref=await fetchLatest(k,true); latest=ref||latest; diag+=`\n→ refresh API forcé (Δ>60s)`; }
+    catch(err){ diag+=`\n→ refresh API échoué (${err.message})`; }
+  }
+
+  /* === SP basé sur l'âge RÉEL de l'image (Last-Modified) === */
+  const {url:spUrl, name:spName} = spImgUrl(k);
+  const spOK  = await preload(spUrl);              // test de chargement
+  let spAgeMs = NaN;
+  if (spOK) spAgeMs = await spImageAgeMs(spUrl);   // HEAD → GET
+
+  const spAgeUsed = Number.isFinite(spAgeMs) ? spAgeMs : (Date.now() - latest.ts);
+  const spAgeSec  = Math.round(spAgeUsed/1000);
+  const spState   = spOK ? 'OK' : 'KO';
+
+  // 1) SP prioritaire si image ≤ 1 min
+  if (spOK && spAgeUsed <= SP_FRESH_MS) {
+    await renderFrom(spUrl, {status:'ok', text:'SP'});
+    showBannerOn(false);
+    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\nTokenSP:${lastTokenOk?'OK':'KO'} • last token:${lastTokenAt?new Date(lastTokenAt).toLocaleTimeString():'—'}\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
+    return;
+  }
+
+  // 2) SP dispo mais image ≥ 10 min → SP + bandeau
+  if (spOK && spAgeUsed >= STALE_MS) {
+    await renderFrom(spUrl, {status:'err', text:'SP (données >10min)'});
+    showBannerOn(true);
+    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nΔimage=${spAgeSec}s ${Number.isFinite(spAgeMs)?'(Last-Modified)':'(fallback latest.ts)'}\n→ bandeau actif`;
+    return;
+  }
+
+  // 3) Si spOK et 1–10 min → on préfère le miroir (plus frais)
+  if(await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true)){
+    lastMirror[k]={url:latest.url,time:Date.now()};
+    note.textContent = `${diag}\nSP image:${spName}\nSP load:${spState}\nsource:Miroir\nlast fetch:${new Date(lastFetchAt[k]).toLocaleTimeString()}`;
+    return;
+  }
+
+  // 4) Cache miroir ≤60 s
+  const cached=lastMirror[k];
+  if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+    await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
+    note.textContent = `${diag}\n→ Miroir KO, affichage cache ≤60s`;
+  } else {
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'});
+    note.textContent = `${diag}\n→ Erreur : miroir KO et cache expiré`;
+  }
+}
+
+/* ====== Start ====== */
+setInterval(tick, REFRESH_MS);
+tick();
+
+/* Token SP au démarrage + toutes 10 min */
+loadTokenFromSP();
+setInterval(loadTokenFromSP, TOKEN_REFRESH_MS);
+</script>
+</body>
+</html>
