@@ -5,7 +5,7 @@ name: Auto-clean folders
 
 on:
   schedule:
-    - cron: "*/3 * * * *"  # toutes les 3 minutes
+    - cron: "*/2 * * * *"  # toutes les 3 minutes
   workflow_dispatch:         # permet aussi de le lancer à la main
 
 # Évite que plusieurs runs "Auto-clean" tournent en même temps sur la même branche
