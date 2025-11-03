@@ -2,8 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TDID Live – SP prioritaire, bandeau latched, bouton Miroir 15 min</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>TDID Live – SP prioritaire, bandeau latched, bouton Miroir 15 min (SP only), mobile optimisé</title>
 <style>
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -16,7 +16,7 @@
   .dot{width:10px;height:10px;border-radius:50%}
   .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
   .stamp{opacity:.9;font-size:.9em}
-  .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em}
+  .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
   .toggle.active{background:#2a3347}
   .wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
@@ -29,25 +29,31 @@
   }
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
-  /* Splash vidéo */
-  .splash{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);
-  }
+
+  /* Splash vidéo (intro) */
+  .splash{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(20,25,35,.9); z-index:30; backdrop-filter: blur(4px);}
   .splash-video{ position:relative; width:min(900px,92vw); aspect-ratio:16/9; }
-  .splash-video video{
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px;
-    z-index:1; /* vidéo au-dessus */
+  .splash-video video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px; z-index:1; }
+  .splash-video .fallback{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1.35; background:#0f1115; border:1px solid var(--line); color:#eaeef5; z-index:0; }
+  .splash-video .skip{ position:absolute; right:10px; bottom:10px; z-index:2; padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#141923; color:#fff; cursor:pointer; opacity:.9; }
+
+  /* Hint rotation mobile (portrait) */
+  .rotate{position:absolute; inset:0; display:none; align-items:center; justify-content:center; z-index:25; background:rgba(15,17,21,.85);}
+  .rotate .box{padding:16px 18px; border-radius:12px; background:#161a24; border:1px solid var(--line); text-align:center; font-weight:600}
+
+  /* Mobile optimisations */
+  @media (pointer:coarse), (max-width: 820px) {
+    .top{height:52px;padding:8px}
+    .btn{padding:6px 10px;border-radius:10px}
+    .stamp{font-size:.8em}
+    .note{font-size:.85em}
+    .banner{font-size:1.2em;width:92vw}
   }
-  .splash-video .fallback{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    font-weight:600; line-height:1.35;
-    background:#0f1115; border:1px solid var(--line); color:#eaeef5;
-    z-index:0; /* texte en dessous */
-  }
-  .splash-video .skip{
-    position:absolute; right:10px; bottom:10px; z-index:2;
-    padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#141923; color:#fff; cursor:pointer; opacity:.9;
+  /* Mobile + paysage => plein écran image */
+  @media (pointer:coarse) and (orientation:landscape){
+    .wrap{align-items:stretch}
+    img{width:100vw;height:100vh;object-fit:contain}
+    .note{bottom:4px}
   }
 </style>
 </head>
@@ -79,6 +85,13 @@
         <div class="fallback">Veuillez patienter : démarrage en cours…<br/>Gelieve te wachten: opstart bezig…</div>
       </div>
     </div>
+
+    <div class="rotate" id="rotateHint">
+      <div class="box">
+        📱 Tournez votre téléphone en mode paysage<br/>📱 Draai uw telefoon naar landschap
+      </div>
+    </div>
+
     <img id="view" alt="TDID Live">
   </div>
 
@@ -97,7 +110,7 @@ const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const REFRESH_MS=6000;
 const FETCH_MIN=60*1000;          // lecture latest.json (hors force API)
 const MIRROR_FORCE_MS=60*1000;    // force API toutes 60 s en miroir
-const BANNER_GT5=5*60*1000;       // bandeau si âge miroir > 5 min (SP only)
+const BANNER_GT5=5*60*1000;       // bandeau si âge miroir > 5 min (SP only, latched jusqu'à ≤5 min)
 const MIRROR_ERR_10=10*60*1000;   // erreur si âge miroir > 10 min (miroir)
 const CACHE_MIRROR_TTL=60*1000;
 
@@ -113,9 +126,27 @@ const img=document.getElementById('view'), note=document.getElementById('note'),
       banner=document.getElementById('banner'),
       splash=document.getElementById('splash'), splashVid=document.getElementById('splashVideo'),
       skipBtn=document.getElementById('skipIntro'),
-      forceBtn=document.getElementById('forceMirror');
+      forceBtn=document.getElementById('forceMirror'),
+      rotateHint=document.getElementById('rotateHint');
+
 const btns={brel:document.getElementById('brel'),delta:document.getElementById('delta'),erasme:document.getElementById('erasme')};
 
+/* ====== Détection téléphone + gestion orientation ====== */
+function isMobile(){
+  const ua = navigator.userAgent || navigator.vendor || "";
+  const coarse = window.matchMedia && window.matchMedia("(pointer:coarse)").matches;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || coarse;
+}
+function updateRotateHint(){
+  if(!isMobile()) { rotateHint.style.display='none'; return; }
+  const landscape = window.innerWidth > window.innerHeight;
+  rotateHint.style.display = landscape ? 'none' : 'flex';
+}
+window.addEventListener('resize', updateRotateHint);
+window.addEventListener('orientationchange', updateRotateHint);
+updateRotateHint();
+
+/* ====== Dépôt courant ====== */
 let depot=localStorage.getItem('tdid_depot')||'brel';
 function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===depot);}}
 for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;tick();};}
@@ -131,7 +162,7 @@ splashVid?.addEventListener('canplay',()=>{tryPlayVideo();});
 skipBtn?.addEventListener('click',endSplash);
 setTimeout(endSplash,8000);
 
-/* ====== État ====== */
+/* ====== États ====== */
 let latestData={brel:null,delta:null,erasme:null}; // {ts,url}
 let lastFetchAt={brel:0,delta:0,erasme:0};
 let lastHttp={brel:'',delta:'',erasme:''};
@@ -139,7 +170,7 @@ let lastSource={brel:'',delta:'',erasme:''};
 let lastMirror={brel:null,delta:null,erasme:null}; // {url,time}
 let forceFetch=true;
 
-/* Bandeau latched par dépôt (reste ON tant que l’âge n’est pas revenu ≤5 min) */
+/* Bandeau latched par dépôt */
 let bannerLatched={brel:false,delta:false,erasme:false};
 
 /* Mode miroir & force API timer */
@@ -153,27 +184,28 @@ function overrideActive(){
 function setOverride(minutes){
   const until=Date.now()+minutes*60*1000;
   localStorage.setItem(OV_KEY,String(until));
-  updateForceBtn();
+  updateForceBtn(true); // passe miroir tout de suite
 }
 function clearOverride(){
   localStorage.removeItem(OV_KEY);
-  updateForceBtn();
+  updateForceBtn(false);
 }
-function updateForceBtn(){
-  const on=overrideActive();
+function updateForceBtn(activeNow){
+  const on = activeNow ?? overrideActive();
   forceBtn.classList.toggle('active',on);
   forceBtn.textContent = on ? "Miroir (forcé) ⏱" : "Miroir 15 min";
+  // bouton visible UNIQUEMENT en mode SP (et pas en miroir) :
+  forceBtn.style.display = (!isMirror && !overrideActive()) ? 'inline-block' : 'none';
 }
-updateForceBtn();
 forceBtn.addEventListener('click',()=>{
   if(overrideActive()){ clearOverride(); } else { setOverride(15); }
-  forceFetch=true;
-  tick();
+  forceFetch=true; tick();
 });
 
+/* Entrée/sortie mode miroir */
 function enterMirror(startupKick=true){
   if(!isMirror){
-    isMirror=true;
+    isMirror=true; updateForceBtn();
     if(startupKick) fetchLatest(depot,{forceApi:true}).catch(()=>{});
     if(mirrorForceTimer) clearInterval(mirrorForceTimer);
     mirrorForceTimer=setInterval(()=>{
@@ -182,7 +214,7 @@ function enterMirror(startupKick=true){
   }
 }
 function leaveMirror(){
-  isMirror=false;
+  isMirror=false; updateForceBtn();
   if(mirrorForceTimer){ clearInterval(mirrorForceTimer); mirrorForceTimer=null; }
 }
 
@@ -198,10 +230,9 @@ function renderFrom(src,statusLabel,exact=false){
   });
 }
 
-/* ====== SP loader (fetch→blob si possible, sinon <img> direct) ====== */
+/* SP loader (fetch→blob sinon <img>) */
 async function loadSpImage(k){
   const u = DATA_SP[k].img;
-  // Voie A : fetch pour blob (anti-cache fort)
   try{
     const r=await fetch(u,{cache:'no-store',credentials:'include',mode:'cors'});
     if(r.ok){
@@ -210,31 +241,22 @@ async function loadSpImage(k){
       return {ok:true,url,via:'fetch'};
     }
   }catch(e){}
-  // Voie B : <img> direct
-  const okImg=await new Promise(res=>{const im=new Image();im.onload=()=>res(true);im.onerror=()=>res(false);im.referrerPolicy='no-referrer-when-downgrade';im.src=u;});
+  // fallback <img>
+  const okImg = await new Promise(res=>{const im=new Image();im.onload=()=>res(true);im.onerror=()=>res(false);im.referrerPolicy='no-referrer-when-downgrade';im.src=u;});
   if(okImg) return {ok:true,url:u,via:'img'};
   return {ok:false,reason:'Load failed'};
 }
 
-/* ====== latest.json ====== */
+/* latest.json */
 async function fetchLatest(k,{forceApi=false}={}){
   const now=Date.now();
   if(!forceApi && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latestData[k]) return latestData[k];
-
-  const path = k==='brel'?'/time_brel/latest.json'
-             : k==='delta'?'/time_delta/latest.json'
-             : '/time_erasme/latest.json';
-
+  const path = k==='brel'?'/time_brel/latest.json' : k==='delta'?'/time_delta/latest.json' : '/time_erasme/latest.json';
   const urlRAW = `${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`;
   const urlCDN = `${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`;
   const urlAPI = `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`;
-
   let trace=[],source='-';
-  async function tryJson(url,init,tag){
-    try{
-      const r=await fetch(url,init); trace.push(`${tag}:${r.status}`); if(!r.ok) return null; source=tag; return await r.json();
-    }catch(e){ trace.push(`${tag}:fail`); return null; }
-  }
+  async function tryJson(url,init,tag){ try{const r=await fetch(url,init); trace.push(`${tag}:${r.status}`); if(!r.ok)return null; source=tag; return await r.json();}catch(e){trace.push(`${tag}:fail`); return null;} }
   let j=null;
   if(forceApi){
     j=await tryJson(urlAPI,{cache:'no-store',headers:{'Accept':'application/vnd.github.v3.raw'}},'API*');
@@ -247,10 +269,8 @@ async function fetchLatest(k,{forceApi=false}={}){
   }
   lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
   if(!j) throw new Error('all fetch attempts failed');
-
   const it=j?.items?.[k]; if(!it?.ts) throw new Error('bad json');
-  let imgUrl=it.url;
-  if(!imgUrl){const f=(it.file||'').split('/').pop(); if(!f) throw new Error('no file'); imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
+  let imgUrl=it.url; if(!imgUrl){const f=(it.file||'').split('/').pop(); if(!f) throw new Error('no file'); imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
   latestData[k]={ts:Number(it.ts)*1000,url:imgUrl};
   forceFetch=false; return latestData[k];
 }
@@ -260,49 +280,53 @@ async function tick(){
   const k=depot; let diag=`Depot: ${k}\n`; showBanner(false);
 
   // Override manuel ?
-  const override=overrideActive();
+  const override = (localStorage.getItem(OV_KEY) && (Date.now()<Number(localStorage.getItem(OV_KEY)))) || false;
 
-  // Si pas d'override et SP dispo → MODE SP (bandeau SP only, latched)
   if(!override){
+    // Essai SP → MODE SP si OK
     const spRes=await loadSpImage(k);
     if(spRes.ok){
-      leaveMirror();
+      leaveMirror(); // met à jour visibilité bouton
       await renderFrom(spRes.url,{status:'ok',text:'SP'},true);
 
-      // Calcul âge miroir en fond → mise à jour du "latch" du bandeau (SP uniquement)
+      // Bandeau latched : calcule l'âge miroir en arrière-plan et conserve l'état jusqu'à ≤5 min
       (async ()=>{
         try{
           const latest=await fetchLatest(k);
           const ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000);
-          if(ageMs>BANNER_GT5) bannerLatched[k]=true;
-          else bannerLatched[k]=false;
+          if(ageMs>BANNER_GT5) bannerLatched[k]=true; else bannerLatched[k]=false; // latch ON >5min, OFF quand ≤5min
           showBanner(bannerLatched[k]);
           note.textContent =
-            `${diag}Mode SP${override?' (override ignoré)':''}\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
+            `${diag}Mode SP\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
             `âge miroir • Δ=${ageSec}s → ${bannerLatched[k]?'Bandeau ON (latched >5min)':'Bandeau OFF (≤5min)'}\nsource: SP`;
         }catch(e){
-          // on n’éteint pas le bandeau si on n’a pas pu lire l’âge ; on garde l’état courant
+          // si latest KO, on ne change pas l'état du latch
           showBanner(bannerLatched[k]);
           note.textContent = `${diag}Mode SP\nlatest.json KO (${lastHttp[k]||e.message})\nsource: SP`;
         }
       })();
+
+      // Bouton “Miroir 15 min” visible uniquement en SP
+      forceBtn.style.display = 'inline-block';
       return;
     }
-    // sinon SP KO → on tombera en miroir
+    // SP KO -> miroir
     diag += `SP KO → bascule miroir\n`;
   } else {
-    diag += `Override manuel: miroir forcé jusqu'à ${new Date(Number(localStorage.getItem(OV_KEY)||0)).toLocaleTimeString()}\n`;
+    diag += `Override manuel actif → mode miroir forcé\n`;
   }
 
   // MODE MIROIR (ou override)
-  enterMirror(true); // force API immédiate au basculement
+  enterMirror(true); // force API immédiate
+  forceBtn.style.display = 'none'; // bouton caché en mode miroir
+
   let latest=null;
   try{ latest=await fetchLatest(k,{forceApi:true}); }
   catch(e){
     const cached=lastMirror[k];
     if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
       await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
-      showBanner(false); // jamais de bandeau en mode miroir
+      showBanner(false);
       note.textContent = `${diag}Mode Miroir (API KO)\n→ Affichage cache ≤60s`;
       return;
     }
@@ -323,7 +347,7 @@ async function tick(){
   const okMir=await renderFrom(latest.url,{status:'warn',text:'Miroir (horodaté)'},true);
   if(okMir){
     lastMirror[k]={url:latest.url,time:Date.now()};
-    showBanner(false); // bandeau OFF en miroir
+    showBanner(false);
     note.textContent = `${diag}Mode Miroir\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\nâge miroir • Δ=${ageSec}s (≤600s)`;
     return;
   }
@@ -342,11 +366,13 @@ async function tick(){
 
 /* ====== Start ====== */
 setInterval(()=>{
-  // auto-clear override si expiré (et mettre à jour le bouton)
-  if(!overrideActive()) updateForceBtn();
+  // auto-clear override si expiré, MAJ bouton
+  if(!overrideActive()) updateForceBtn(false);
+  updateRotateHint();
   tick();
 }, REFRESH_MS);
 
+updateForceBtn(false);
 tick();
 </script>
 </body>
