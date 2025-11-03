@@ -24,6 +24,13 @@ jobs:
           fetch-depth: 0              # nécessaire pour git pull --rebase
           persist-credentials: true   # garde le token pour git push
 
+      - name: Fetch gh-pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "🔄 Récupération de la branche gh-pages..."
+          git fetch origin gh-pages || echo "⚠️ Branche gh-pages introuvable (pas bloquant, mais pas d'exception La Teste)."
+
       - name: Check and clean folders
         shell: bash
         run: |
@@ -33,8 +40,19 @@ jobs:
           MAX_FILES=10
           FOLDERS=("mirror_brel" "mirror_delta" "mirror_erasme")
 
+          # --- Lecture de Time/latest.json sur gh-pages ---
+          JSON_CONTENT=""
+          if git show origin/gh-pages:Time/latest.json >/dev/null 2>&1; then
+            JSON_CONTENT="$(git show origin/gh-pages:Time/latest.json)"
+            echo "✅ Time/latest.json trouvé sur origin/gh-pages."
+          else
+            echo "⚠️ Time/latest.json introuvable sur origin/gh-pages, nettoyage sans exception La Teste."
+          fi
+
           for FOLDER in "${FOLDERS[@]}"; do
+            echo ""
             echo "🔍 Vérification du dossier $FOLDER..."
+
             if [ ! -d "$FOLDER" ]; then
               echo "ℹ️ Dossier $FOLDER introuvable, on passe."
               continue
@@ -42,13 +60,94 @@ jobs:
 
             # Nombre total de fichiers dans le dossier (sous-dossiers compris)
             COUNT=$(find "$FOLDER" -type f | wc -l || echo 0)
-            echo "→ $COUNT fichiers détectés"
+            echo "→ $COUNT fichiers détectés dans $FOLDER"
 
-            if [ "$COUNT" -gt "$MAX_FILES" ]; then
-              echo "⚠️ Trop de fichiers ($COUNT > $MAX_FILES), suppression complète du dossier $FOLDER..."
-              rm -rf "$FOLDER"
-            else
+            if [ "$COUNT" -le "$MAX_FILES" ]; then
               echo "✅ OK : $FOLDER contient $COUNT fichiers (<= $MAX_FILES), rien à faire."
+              continue
+            fi
+
+            echo "⚠️ Trop de fichiers ($COUNT > $MAX_FILES) dans $FOLDER"
+
+            KEEP_FILE=""
+
+            # On ne tente de chercher La Teste que si on a bien le JSON
+            if [ -n "${JSON_CONTENT:-}" ]; then
+              # --- Mapping dossier -> clé JSON ---
+              case "$FOLDER" in
+                mirror_brel)
+                  SITE_KEY="Brel"
+                  ;;
+                mirror_delta)
+                  SITE_KEY="Delta"
+                  ;;
+                mirror_erasme)
+                  SITE_KEY="Erasme"
+                  ;;
+                *)
+                  SITE_KEY=""
+                  ;;
+              esac
+
+              if [ -n "$SITE_KEY" ]; then
+                echo "🔎 Recherche du fichier \"La Teste\" pour le site $SITE_KEY dans Time/latest.json..."
+
+                # 🔧 ADAPTER ICI SELON LA STRUCTURE DE Time/latest.json 🔧
+                #
+                # Exemple de structure possible :
+                # {
+                #   "Brel": {
+                #     "La Teste": {
+                #       "path": "mirror_brel/la_teste_20251103.json"
+                #     }
+                #   },
+                #   "Delta": { ... },
+                #   "Erasme": { ... }
+                # }
+                #
+                # Dans ce cas, ce jq est correct :
+                LA_TESTE_PATH=$(printf '%s\n' "$JSON_CONTENT" \
+                  | jq -r --arg site "$SITE_KEY" '.[$site]["La Teste"].path // empty')
+
+                if [ -n "$LA_TESTE_PATH" ]; then
+                  echo "→ Chemin La Teste trouvé dans le JSON : $LA_TESTE_PATH"
+
+                  # Si le chemin commence par "mirror_xxx/", on le convertit en chemin relatif au dossier
+                  if [[ "$LA_TESTE_PATH" == "$FOLDER/"* ]]; then
+                    KEEP_FILE="${LA_TESTE_PATH#$FOLDER/}"
+                  else
+                    # Si dans ton JSON c'est juste le nom de fichier (ex: "la_teste_20251103.json")
+                    # alors commente le if précédent et mets simplement :
+                    # KEEP_FILE="$LA_TESTE_PATH"
+                    echo "ℹ️ Le chemin La Teste ne commence pas par $FOLDER/, vérifie la structure de Time/latest.json."
+                  fi
+
+                  if [ -n "$KEEP_FILE" ]; then
+                    echo "✅ Fichier La Teste à conserver dans $FOLDER : $KEEP_FILE"
+                  fi
+                else
+                  echo "ℹ️ Aucun chemin \"La Teste\" pour le site $SITE_KEY dans Time/latest.json"
+                fi
+              else
+                echo "ℹ️ Pas de clé JSON associée pour le dossier $FOLDER."
+              fi
+            fi
+
+            # --- Nettoyage du dossier ---
+            if [ -n "${KEEP_FILE:-}" ] && [ -f "$FOLDER/$KEEP_FILE" ]; then
+              echo "🧹 Nettoyage de $FOLDER en conservant uniquement le fichier La Teste..."
+
+              # On supprime tous les fichiers sauf celui de La Teste
+              find "$FOLDER" -type f ! -path "$FOLDER/$KEEP_FILE" -delete
+
+              # On supprime les sous-dossiers vides, mais pas le dossier racine
+              find "$FOLDER" -type d -empty ! -path "$FOLDER" -delete
+
+              echo "✅ Nettoyage terminé pour $FOLDER (fichier La Teste conservé)."
+            else
+              echo "⚠️ Aucun fichier La Teste à conserver dans $FOLDER, suppression complète du dossier..."
+              rm -rf "$FOLDER"
+              echo "🗑️ Dossier $FOLDER supprimé."
             fi
           done
 
