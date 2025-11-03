@@ -27,13 +27,8 @@
 
   /* Zone principale corrigée pour iOS */
   .wrap{
-    flex:1;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    position:relative;
-    height:100svh;         /* exclut les barres système */
-    overflow:auto;         /* autorise scroll si Safari masque un bout */
+    flex:1; display:flex; align-items:center; justify-content:center;
+    position:relative; height:100svh; overflow:auto;
   }
   .wrap::-webkit-scrollbar{display:none}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
@@ -72,38 +67,20 @@
   /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
   @media (pointer:coarse) and (orientation:landscape){
     :root{--side:64px;}
-
     body{flex-direction:row}
-
     .top{
-      position:fixed;left:0;top:0;bottom:0;
-      height:100svh;width:var(--side);
+      position:fixed;left:0;top:0;bottom:0;height:100svh;width:var(--side);
       border-bottom:none;border-right:1px solid var(--line);
       flex-direction:column;align-items:center;gap:8px;
       padding:8px 6px;background:#12151bf2;
     }
-
     .brand{writing-mode:vertical-rl;transform:rotate(180deg);margin:0}
     .btn{padding:6px 4px;border-radius:10px;width:100%;font-size:.92em;}
     .status{margin-left:0;flex-direction:column;gap:6px}
     .stamp{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.72em}
-
-    .wrap{
-      margin-left:var(--side);
-      height:100svh;
-      overflow:auto;
-    }
+    .wrap{margin-left:var(--side);height:100svh;overflow:auto;}
     .wrap::-webkit-scrollbar{display:none}
-
-    img{
-      width:calc(100vw - var(--side));
-      max-width:none;
-      height:auto;
-      object-fit:contain;
-      display:block;
-      margin:0 auto;
-    }
-
+    img{width:calc(100vw - var(--side));max-width:none;height:auto;object-fit:contain;display:block;margin:0 auto;}
     .note{left:calc(50% + var(--side)/2)}
     .fsbtn{top:12px;right:12px}
   }
@@ -156,10 +133,12 @@ const JSDELIVR = `https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 
-const REFRESH_MS=6000, FETCH_MIN=60000, MIRROR_FORCE_MS=60000, BANNER_GT5=5*60000, MIRROR_ERR_10=10*60000, CACHE_MIRROR_TTL=60000;
-const SP_FORCE_API_GT = 280 * 1000;
+/* périodicités et seuils */
+const REFRESH_MS=6000, FETCH_MIN=60000, MIRROR_FORCE_MS=60000;
+const BANNER_GT5=5*60000, MIRROR_ERR_10=10*60000, CACHE_MIRROR_TTL=60000;
+const SP_FORCE_API_GT = 280 * 1000; // en mode SP, si âge miroir > 280s → force API
 
-/* SharePoint */
+/* SharePoint (PNG) */
 const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
 const spRaw=f=>`${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER+"/"+f)}&t=${Date.now()}`;
@@ -173,19 +152,18 @@ const img=document.getElementById('view'), note=document.getElementById('note'),
       skip=document.getElementById('skipIntro'), fsBtn=document.getElementById('fsbtn'),
       forceBtn=document.getElementById('forceMirror'), rotateHint=document.getElementById('rotateHint');
 
-/* Détection mobile */
+/* Détection mobile & rotation */
 function isMobile(){return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)|| (matchMedia&&matchMedia("(pointer:coarse)").matches);}
 function isLandscape(){return window.innerWidth>window.innerHeight;}
 function updateRotateHint(){ if(!isMobile()){rotateHint.style.display='none';return;} rotateHint.style.display=isLandscape()?'none':'flex'; }
-window.addEventListener('resize', updateRotateHint);
-window.addEventListener('orientationchange', updateRotateHint);
+addEventListener('resize', updateRotateHint);
+addEventListener('orientationchange', updateRotateHint);
 updateRotateHint();
 
-/* Fullscreen mobile */
+/* Fullscreen mobile (via bouton) */
 function canFS(){return !!document.documentElement.requestFullscreen;}
 async function enterFS(){try{await document.documentElement.requestFullscreen();return true;}catch{return false;}}
-let userInteracted=false;
-function markInteracted(){ userInteracted=true; if(isMobile() && canFS()){ fsBtn.style.display='inline-block'; } }
+function markInteracted(){ if(isMobile() && canFS()){ fsBtn.style.display='inline-block'; } }
 document.addEventListener('click',markInteracted);
 document.addEventListener('touchstart',markInteracted);
 fsBtn.addEventListener('click', async()=>{ const ok=await enterFS(); if(ok){ fsBtn.style.display='none'; }});
@@ -205,7 +183,7 @@ let latest={brel:null,delta:null,erasme:null};
 let lastFetchAt={brel:0,delta:0,erasme:0};
 let lastHttp={brel:'',delta:'',erasme:''};
 let lastSource={brel:'',delta:'',erasme:''};
-let lastMirror={brel:null,delta:null,erasme:null};
+let lastMirror={brel:null,delta:null,erasme:null}; // {url,time}
 let forceFetch=true; let bannerLatch={brel:false,delta:false,erasme:false};
 let isMirror=false, mirrorTimer=null; let preferSPNext=false;
 
@@ -224,8 +202,18 @@ function updateBtn(activeNow){
 forceBtn.addEventListener('click',()=>{overrideActive()?clearOverride():setOverride(15);});
 
 /* Mode miroir */
-function enterMirror(startupKick=true){if(!isMirror){isMirror=true;updateBtn();if(startupKick)fetchLatest(depot,true).catch(()=>{});if(mirrorTimer)clearInterval(mirrorTimer);mirrorTimer=setInterval(()=>{if(isMirror)fetchLatest(depot,true).catch(()=>{});},MIRROR_FORCE_MS);}}
-function leaveMirror(){isMirror=false;updateBtn();if(mirrorTimer){clearInterval(mirrorTimer);mirrorTimer=null;}}
+function enterMirror(startupKick=true){
+  if(!isMirror){
+    isMirror=true; updateBtn();
+    if(startupKick) fetchLatest(depot,true).catch(()=>{});
+    if(mirrorTimer) clearInterval(mirrorTimer);
+    mirrorTimer=setInterval(()=>{ if(isMirror) fetchLatest(depot,true).catch(()=>{}); }, MIRROR_FORCE_MS);
+  }
+}
+function leaveMirror(){
+  isMirror=false; updateBtn();
+  if(mirrorTimer){ clearInterval(mirrorTimer); mirrorTimer=null; }
+}
 
 /* Helpers */
 function setTop(status,label){led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleString()}`;}
@@ -233,21 +221,158 @@ function showBanner(show){banner.style.display=show?'block':'none';}
 function renderFrom(src,statusLabel){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text);res(true);};t.onerror=()=>res(false);t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
 function dbg(parts){note.textContent=parts.filter(Boolean).join(' | ');}
 
-/* SP loader */
+/* SP loader (fetch → blob; fallback <img>) */
 async function loadSpImage(k){
-  const u=DATA_SP[k].img;let via='fetch';
-  try{const r=await fetch(u,{cache:'no-store',credentials:'include',mode:'cors'});if(r.ok){const b=await r.blob();return{ok:true,url:URL.createObjectURL(b),via};}}catch{}
-  via='img';const okImg=await new Promise(res=>{const im=new Image();im.onload=()=>res(true);im.onerror=()=>res(false);im.src=u;});if(okImg)return{ok:true,url:u,via};return{ok:false,reason:'Load failed'};}
+  const u=DATA_SP[k].img; let via='fetch';
+  try{
+    const r=await fetch(u,{cache:'no-store',credentials:'include',mode:'cors'});
+    if(r.ok){const b=await r.blob(); return {ok:true,url:URL.createObjectURL(b),via};}
+  }catch{}
+  via='img';
+  const okImg = await new Promise(res=>{const im=new Image();im.onload=()=>res(true);im.onerror=()=>res(false);im.src=u;});
+  if(okImg) return {ok:true,url:u,via};
+  return {ok:false,reason:'Load failed'};
+}
 
-/* latest.json */
+/* latest.json (avec RAW→CDN→API et trace) */
 async function fetchLatest(k,forceApi=false){
-  const now=Date.now();if(!forceApi&&!forceFetch&&now-lastFetchAt[k]<FETCH_MIN&&latest[k])return latest[k];
-  const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
-  const urls=[{u:`${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`,tag:'RAW'},{u:`${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`,tag:'CDN'},{u:`${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`,tag:forceApi?'API*':'API'}];
-  let trace=[],source='-';
-  async function tryJson(u,tag,init){try{const r=await fetch(u,{cache:'no-store',...init});trace.push(`${tag}:${r.status}`);if(!r.ok)return null;source=tag;return await r.json();}catch{trace.push(`${tag}:fail`);return null;}}
+  const now=Date.now();
+  if(!forceApi && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latest[k]) return latest[k];
+
+  const path = k==='brel'?'/time_brel/latest.json' : k==='delta'?'/time_delta/latest.json' : '/time_erasme/latest.json';
+  const urls = [
+    {u:`${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'RAW'},
+    {u:`${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'CDN'},
+    {u:`${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`, tag: forceApi ? 'API*' : 'API'}
+  ];
+  let trace=[], source='-';
+  async function tryJson(u,tag,init){
+    try{
+      const r=await fetch(u,{cache:'no-store',...init}); trace.push(`${tag}:${r.status}`);
+      if(!r.ok) return null; source=tag; return await r.json();
+    }catch{ trace.push(`${tag}:fail`); return null; }
+  }
+
   let j=null;
-  if(forceApi){j=await tryJson(urls[2].u,urls[2].tag,{headers:{'Accept':'application/vnd.github.v3.raw'}});if(!j)j=await tryJson(urls[0].u,urls[0].tag);if(!j)j=await tryJson(urls[1].u,urls[1].tag);}else{j=await tryJson(urls[0].u,urls[0].tag);if(!j)j=await tryJson(urls[1].u,urls[1].tag);if(!j)j=await tryJson(urls[2].u,urls[2].tag,{headers:{'Accept':'application/vnd.github.v3.raw'}});}
-  lastFetchAt[k]=now;lastHttp[k]=trace.join(' ');lastSource[k]=source;if(!j)throw new Error('fetch failed');
-  const it=j?.items?.[k];if(!it?.ts)throw new Error('bad json');
-  let imgUrl=it.url;if(!imgUrl){const f=(it.file||'').split('/').pop
+  if(forceApi){
+    j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+    if(!j) j = await tryJson(urls[0].u, urls[0].tag);
+    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
+  }else{
+    j = await tryJson(urls[0].u, urls[0].tag);
+    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
+    if(!j) j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+  }
+
+  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
+  if(!j) throw new Error('fetch failed');
+
+  const it=j?.items?.[k];
+  if(!it?.ts) throw new Error('bad json');
+  let imgUrl=it.url;
+  if(!imgUrl){
+    const f=(it.file||'').split('/').pop();
+    if(!f) throw new Error('no file');
+    imgUrl = `${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
+  }
+  latest[k]={ts:Number(it.ts)*1000, url:imgUrl};
+  forceFetch=false;
+  return latest[k];
+}
+
+/* Tick principal */
+async function tick(){
+  const k=depot;
+  const override = overrideActive();
+  const preferSPThisTick = preferSPNext; preferSPNext=false;
+
+  // ——— SP prioritaire si pas d'override ———
+  if(!override){
+    const sp = await loadSpImage(k);
+    if(sp.ok){
+      leaveMirror(); updateBtn(false);
+      await renderFrom(sp.url,{status:'ok',text:'SP'});
+
+      try{
+        // Dernier latest + bannière >5min
+        let L = await fetchLatest(k);
+        let ageMs = Date.now() - L.ts;
+        let forced = false;
+
+        // En mode SP : si Δ miroir > 280s → force un appel API one-shot
+        if(ageMs > SP_FORCE_API_GT){
+          const L2 = await fetchLatest(k,true);
+          if(L2){ L=L2; ageMs = Date.now()-L.ts; forced = true; }
+        }
+
+        const ageSec = Math.round(ageMs/1000);
+        bannerLatch[k] = ageMs > BANNER_GT5 ? true : false;
+        showBanner(bannerLatch[k]);
+
+        dbg([
+          `mode: SP`,
+          `SP: OK(${sp.via})`,
+          `latest: ${lastSource[k]}`,
+          `trace: ${lastHttp[k]}`,
+          `fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,
+          `Δ=${ageSec}s${forced?' (API@SP)':''}`,
+          `bandeau: ${bannerLatch[k]?'ON>5m':'OFF'}`,
+          `source: SP`
+        ]);
+      }catch(e){
+        showBanner(bannerLatch[k]);
+        dbg([`mode: SP`, `SP: OK(${sp.via})`, `latest: KO`, `trace: ${lastHttp[k]||e.message}`, `source: SP`]);
+      }
+      return;
+    }else if(preferSPThisTick){
+      // Petit hint si on vient de quitter SP
+      dbg([`mode: SP?`, `SP: KO(${sp.reason||'?'})`, `hint: retry SP next tick`]);
+    }
+  }
+
+  // ——— Mode Miroir (ou override) ———
+  enterMirror(true); updateBtn();
+
+  let L=null;
+  try{ L = await fetchLatest(k,true); }
+  catch(e){
+    const cached=lastMirror[k];
+    if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+      await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
+      dbg([`mode: Miroir`, `API: KO`, `affiche: cache ≤60s`]); return;
+    }
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); showBanner(false);
+    dbg([`mode: Miroir`, `API: KO`, `affiche: erreur`]); return;
+  }
+
+  const ageMs=Date.now()-L.ts, ageSec=Math.round(ageMs/1000);
+  if(ageMs>MIRROR_ERR_10){
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'}); showBanner(false);
+    dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: erreur`]);
+    return;
+  }
+
+  const okMir=await renderFrom(L.url,{status:'warn',text:'Miroir'});
+  if(okMir){
+    lastMirror[k]={url:L.url,time:Date.now()};
+    showBanner(false);
+    dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: miroir`]);
+    return;
+  }
+
+  const cached=lastMirror[k];
+  if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+    await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
+    dbg([`mode: Miroir`, `miroir: KO`, `affiche: cache ≤60s`]);
+  } else {
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'}); showBanner(false);
+    dbg([`mode: Miroir`, `miroir: KO`, `affiche: erreur`]);
+  }
+}
+
+/* Start */
+setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
+tick();
+</script>
+</body>
+</html>
