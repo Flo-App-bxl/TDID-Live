@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TDID Live – SP unifié (fetch→Blob), Miroir API forcée, bandeau SP uniquement</title>
+<title>TDID Live – SP prioritaire, fetch avec cookies, miroir API forcée</title>
 <style>
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -35,13 +35,13 @@
   .splash-video{ position:relative; width:min(900px,92vw); aspect-ratio:16/9; }
   .splash-video video{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:12px;
-    z-index:1;
+    z-index:1; /* vidéo au-dessus */
   }
   .splash-video .fallback{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     font-weight:600; line-height:1.35;
     background:#0f1115; border:1px solid var(--line); color:#eaeef5;
-    z-index:0;
+    z-index:0; /* texte en dessous */
   }
   .splash-video .skip{
     position:absolute; right:10px; bottom:10px; z-index:2;
@@ -120,7 +120,15 @@ const btns={brel:document.getElementById('brel'),delta:document.getElementById('
 
 let depot=localStorage.getItem('tdid_depot')||'brel';
 function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===depot);}}
-for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',depot);setActive();forceFetch=true;enterMirror(false);tick();};}
+for(const k in btns){
+  btns[k].onclick=()=>{
+    depot=k; localStorage.setItem('tdid_depot',depot);
+    setActive();
+    forceFetch=true;
+    // ⚠️ on ne force plus le mode miroir ici
+    tick();
+  };
+}
 setActive();
 
 /* ====== Vidéo intro ====== */
@@ -170,15 +178,20 @@ function leaveMirror(){
 /* ====== Helpers ====== */
 function setTop(status,label){led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleString()}`;}
 function showBanner(show){banner.style.display=show?'block':'none';}
-function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text);res(true);};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false);};t.src=exact?src:(src+(src.includes('?')?'&':'?')+'t='+(Date.now()));});}
+function renderFrom(src,statusLabel,exact=false){return new Promise(res=>{const t=new Image();t.onload=()=>{img.src=t.src;setTop(statusLabel.status,statusLabel.text);res(true);};t.onerror=()=>{setTop('err',statusLabel.text+' KO');res(false);};t.src=exact?src:(src+(src.includes('?')?'&':'?')+'t='+Date.now());});}
 
-/* ====== SP unifié: fetch → headers + Blob URL ====== */
+/* ====== SP unifié: fetch (avec cookies) → headers + Blob URL ====== */
 async function loadSpImage(k){
-  const u = DATA_SP[k].img; // déjà avec anti-cache ?t=Date.now()
+  const u = DATA_SP[k].img; // URL avec t=Date.now()
   try{
-    const r = await fetch(u, { cache:'no-store' });
-    if(!r.ok) return { ok:false, reason:'HTTP '+r.status };
-    // headers pour signature
+    const r = await fetch(u, {
+      cache:'no-store',
+      credentials:'include',  // ✅ envoie les cookies SharePoint
+      mode:'cors'
+    });
+    if(!r.ok){
+      return { ok:false, reason:`HTTP ${r.status}` };
+    }
     const lm   = r.headers.get('Last-Modified') || r.headers.get('x-ms-file-last-modified') || r.headers.get('x-ms-last-modified') || 'n/a';
     const clen = r.headers.get('Content-Length') || 'n/a';
     const sig  = `${lm}|${clen}`;
@@ -186,7 +199,7 @@ async function loadSpImage(k){
     const url  = URL.createObjectURL(blob);
     return { ok:true, url, sig, lm, clen };
   }catch(e){
-    return { ok:false, reason: (e && e.message) ? e.message : 'fetch failed' };
+    return { ok:false, reason:(e && e.message) ? e.message : 'fetch failed' };
   }
 }
 function updateSpFreeze(k,sig){
@@ -207,8 +220,8 @@ async function fetchLatest(k, opts={}){
              : k==='delta'?'/time_delta/latest.json'
              : '/time_erasme/latest.json';
 
-  const urlRAW = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}${path}?x_bypass=${Math.floor(now/60000)}`;
-  const urlCDN = `https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}${path}?x_bypass=${Math.floor(now/60000)}`;
+  const urlRAW = `${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`;
+  const urlCDN = `${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`;
   const urlAPI = `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`;
 
   let trace=[], source='-';
@@ -253,8 +266,8 @@ async function fetchLatest(k, opts={}){
 async function tick(){
   const k=depot; let diag=`Depot: ${k}\n`; showBanner(false);
 
-  // --- SP unifié ---
-  const spRes = await loadSpImage(k); // {ok,url,sig,lm,clen}
+  // 1) SP : fetch avec cookies → Blob URL
+  const spRes = await loadSpImage(k); // {ok,url,sig,lm,clen} ou {ok:false,reason}
   if(spRes.ok){
     updateSpFreeze(k, spRes.sig);
   }else{
@@ -263,34 +276,35 @@ async function tick(){
   const frozen = spState[k].frozen;
 
   if(spRes.ok && !frozen){
-    // MODE SP
+    // --- MODE SP ---
     leaveMirror();
     await renderFrom(spRes.url,{status:'ok',text:'SP'},true);
     setTop('ok','SP');
-    // calcul âge miroir en fond → bandeau SP uniquement
+
+    // âge miroir en fond → bandeau (SP UNIQUEMENT)
     (async ()=>{
       try{
-        const latest=await fetchLatest(k);
+        const latest=await fetchLatest(k); // RAW→CDN→API
         const ageMs=Date.now()-latest.ts, ageSec=Math.round(ageMs/1000);
         const bannerOn = ageMs > BANNER_GT5;
         showBanner(bannerOn);
         note.textContent =
-          `${diag}Mode SP (no API pour l'affichage)\nSP sig: ${spRes.sig}\nfreeze:${spState[k].hist.length}/${FREEZE_THRESHOLD}\n`+
+          `${diag}Mode SP (no API pour l'affichage)\nSP load: OK | sig=${spRes.sig}\nfreeze:${spState[k].hist.length}/${FREEZE_THRESHOLD} (SP figé: ${frozen?'oui':'non'})\n`+
           `source latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
           `âge miroir • Δ=${ageSec}s → ${bannerOn?'Bandeau ON (>5min)':'Bandeau OFF (≤5min)'}\nsource: SP`;
       }catch(e){
         note.textContent =
-          `${diag}Mode SP (no API pour l'affichage)\nSP sig: ${spRes.sig}\nfreeze:${spState[k].hist.length}/${FREEZE_THRESHOLD}\n`+
+          `${diag}Mode SP (no API pour l'affichage)\nSP load: OK | sig=${spRes.sig}\nfreeze:${spState[k].hist.length}/${FREEZE_THRESHOLD} (SP figé: ${frozen?'oui':'non'})\n`+
           `latest.json KO (${lastHttp[k]||e.message})\nsource: SP`;
       }
     })();
     return;
   }
 
-  // Bascule miroir (SP KO ou SP figé)
-  if(spRes.ok && frozen) diag += `SP figé (signature identique ${FREEZE_THRESHOLD}x) → bascule miroir\n`;
-  if(!spRes.ok)          diag += `SP KO (${spRes.reason||'?'}) → bascule miroir\n`;
-  enterMirror(true); // kick API
+  // 2) Bascule miroir
+  let reason = spRes.ok ? 'SP figé' : `SP KO (${spRes.reason||'?'})`;
+  diag += reason + " → bascule miroir\n";
+  enterMirror(true); // force API immédiate
 
   // MODE MIROIR
   let latest=null;
@@ -299,11 +313,17 @@ async function tick(){
     const cached=lastMirror[k];
     if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
       await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
-      note.textContent = `${diag}Mode Miroir (API forcée/normale KO)\nlatest.json KO (${lastHttp[k]||e.message})\nSP figé:${frozen?'oui':'non'}\n→ Affichage cache ≤60s`;
+      note.textContent =
+        `${diag}Mode Miroir (API forcée/normale KO)\nlatest.json KO (${lastHttp[k]||e.message})\n`+
+        `SP load: ${spRes.ok?'OK':'KO'} ${spRes.ok?`sig=${spRes.sig}`:`(${spRes.reason||'?'})`} • SP figé: ${frozen?'oui':'non'}\n`+
+        `→ Affichage cache ≤60s`;
       return;
     }
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});
-    note.textContent = `${diag}Mode Miroir (API forcée/normale KO)\nlatest.json KO (${lastHttp[k]||e.message})\nSP figé:${frozen?'oui':'non'}\n→ Pas de données`;
+    note.textContent =
+      `${diag}Mode Miroir (API forcée/normale KO)\nlatest.json KO (${lastHttp[k]||e.message})\n`+
+      `SP load: ${spRes.ok?'OK':'KO'} ${spRes.ok?`sig=${spRes.sig}`:`(${spRes.reason||'?'})`} • SP figé: ${frozen?'oui':'non'}\n`+
+      `→ Pas de données`;
     return;
   }
 
@@ -312,7 +332,8 @@ async function tick(){
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'});
     note.textContent =
       `${diag}Mode Miroir (API active/60s)\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
-      `âge miroir • Δ=${ageSec}s (>600s) → Écran erreur\nSP figé:${frozen?'oui':'non'}`;
+      `âge miroir • Δ=${ageSec}s (>600s) → Écran erreur\n`+
+      `SP load: ${spRes.ok?'OK':'KO'} ${spRes.ok?`sig=${spRes.sig}`:`(${spRes.reason||'?'})`} • SP figé: ${frozen?'oui':'non'}`;
     return;
   }
 
@@ -322,17 +343,22 @@ async function tick(){
     showBanner(false); // jamais de bandeau en mode miroir
     note.textContent =
       `${diag}Mode Miroir (API active/60s)\nsource latest: ${lastSource[k]} | ${lastHttp[k]}\n`+
-      `âge miroir • Δ=${ageSec}s (≤600s)\nSP figé:${frozen?'oui':'non'}${frozen?'\n⚠️ SP figé — on surveille une nouvelle signature pour revenir sur SP.':''}`;
+      `âge miroir • Δ=${ageSec}s (≤600s)\n`+
+      `SP load: ${spRes.ok?'OK':'KO'} ${spRes.ok?`sig=${spRes.sig}`:`(${spRes.reason||'?'})`} • SP figé: ${frozen?'oui':'non'}`;
     return;
   }
 
   const cached=lastMirror[k];
   if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'},true);
-    note.textContent = `${diag}Mode Miroir (API active/60s)\n→ Miroir KO, affichage cache ≤60s\nSP figé:${frozen?'oui':'non'}`;
+    note.textContent =
+      `${diag}Mode Miroir (API active/60s)\n→ Miroir KO, affichage cache ≤60s\n`+
+      `SP load: ${spRes.ok?'OK':'KO'} ${spRes.ok?`sig=${spRes.sig}`:`(${spRes.reason||'?'})`} • SP figé: ${frozen?'oui':'non'}`;
   } else {
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'});
-    note.textContent = `${diag}Mode Miroir (API active/60s)\n→ Erreur : miroir KO et cache expiré\nSP figé:${frozen?'oui':'non'}`;
+    note.textContent =
+      `${diag}Mode Miroir (API active/60s)\n→ Erreur : miroir KO et cache expiré\n`+
+      `SP load: ${spRes.ok?'OK':'KO'} ${spRes.ok?`sig=${spRes.sig}`:`(${spRes.reason||'?'})`} • SP figé: ${frozen?'oui':'non'}`;
   }
 }
 
