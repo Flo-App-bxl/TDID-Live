@@ -2,149 +2,188 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TDID Live – Brel / Delta / Erasm.</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>TDID – Train and Departure Information for Driver</title>
+
+<link rel="icon" type="image/jpeg" href="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg">
+<link rel="apple-touch-icon" href="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg">
+<meta name="theme-color" content="#0f1115" />
+
 <style>
-  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff}
+  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-  body{padding-top:64px}
-  .top{position:fixed;top:0;left:0;right:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);backdrop-filter:blur(6px);z-index:10}
+  body{display:flex;flex-direction:column}
+
+  .top{flex-shrink:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);z-index:5}
   .brand{font-weight:700;margin-right:8px}
-  .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer}
+  .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:#141923;color:var(--fg);cursor:pointer}
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
-  .wrap{height:calc(100vh - 64px);display:flex;align-items:center;justify-content:center}
-  img{max-width:100%;max-height:100%;object-fit:contain}
-  .stamp{margin-left:auto;opacity:.85;font-size:.9em}
-  .note{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);opacity:.85;font-size:.85em;text-align:center;white-space:pre-line}
+  .status{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+  .stamp{opacity:.9;font-size:.9em}
+  .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
+  .toggle.active{background:#2a3347}
+
+  .wrap{flex:1; display:flex; align-items:center; justify-content:center;
+    position:relative; height:100svh; overflow:auto;}
+  .wrap::-webkit-scrollbar{display:none}
+  img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
+
+  .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
+
+  .banner{position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);
+    background:rgba(242,182,54,0.75);color:#000;
+    padding:26px 32px;border-radius:18px;font-weight:700;font-size:1.5em;
+    z-index:20;display:none;overflow:hidden;white-space:nowrap;width:85vw;text-align:center;
+    box-shadow:0 4px 16px rgba(0,0,0,0.3);}
+  .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
+  @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
+
+  .splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0f1115e0;z-index:30}
+  .splash video{max-width:80vw;border-radius:10px}
+  .splash .skip{position:absolute;bottom:20px;right:20px;padding:8px 14px;background:#1b2130;color:#fff;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+
+  .rotate{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#0f1115cf;z-index:25}
+  .rotate .box{padding:16px 20px;border:1px solid var(--line);border-radius:12px;background:#161a24;text-align:center}
+
+  /* Night mode overlay */
+  .night-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(5,6,10,0.92);
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    padding-top:12vh;
+    z-index:35;
+    color:#eaeef5;
+    text-align:center;
+  }
+  .night-logo{
+    width:160px;
+    max-width:50vw;
+    margin-bottom:16px;
+  }
+  .night-line{
+    font-size:1.6em;
+    margin:6px 0;
+  }
+
+  .fsbtn{position:fixed;right:12px;top:72px;z-index:26;padding:8px 12px;border-radius:10px;border:1px solid var(--line);
+    background:#141923;color:#fff;font-size:.9em;display:none;cursor:pointer;}
 </style>
 </head>
+
 <body>
-  <div class="top">
+  <div class="top" id="topbar">
     <span class="brand">TDID Live</span>
     <button class="btn" id="brel">Brel</button>
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
-    <span class="stamp" id="stamp">—</span>
+    <div class="status">
+      <button id="forceMirror" class="toggle">Miroir 15 min</button>
+      <span id="led" class="dot"></span>
+      <span id="stamp">—</span>
+    </div>
   </div>
 
-  <div class="wrap"><img id="view" alt="TDID Live"></div>
+  <button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
+
+  <div class="banner" id="banner">
+    <span>Refresh &gt; 5 min – vérifier fiabilité via ‘Last Refresh’ • Refresh &gt; 5 min – controleer betrouwbaarheid via ‘Last Refresh’</span>
+  </div>
+
+  <div class="wrap">
+    <div class="splash" id="splash">
+      <video id="intro" autoplay muted playsinline preload="auto"
+        src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro.mp4"></video>
+      <button class="skip" id="skipIntro">Passer</button>
+    </div>
+
+    <div class="rotate" id="rotateHint">
+      <div class="box">
+        📱 Tournez votre téléphone en mode paysage<br/>📱 Draai uw telefoon naar de liggende stand
+      </div>
+    </div>
+
+    <!-- Night overlay -->
+    <div class="night-overlay" id="nightOverlay">
+      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
+      <div class="night-line" id="nightLine1">Mode Night 🌙</div>
+      <div class="night-line" id="nightLine2">Bonne nuit</div>
+    </div>
+
+    <img id="view" alt="TDID Live" />
+  </div>
   <div class="note" id="note"></div>
 
 <script>
-/* === Lecture directe RAW GitHub (instantané) === */
-const RAW = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/";
-const DATA = {
-  brel:   { img: RAW + "live_brel.png",   age: RAW + "live_brel.age.txt"   },
-  delta:  { img: RAW + "live_delta.png",  age: RAW + "live_delta.age.txt"  },
-  erasme: { img: RAW + "live_erasme.png", age: RAW + "live_erasme.age.txt" }
-};
-const ERR_IMG    = RAW + "TDID_Erreur.png";
-const REFRESH_MS = 3000;
-const STALE_SEC  = 120; // ⏱ 2 minutes exactes
+const GH_USER="Flo-App-bxl", GH_REPO="TDID-Live", GH_BRANCH="main";
+const GH_RAW=`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
+const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
+const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
+const NIGHT_MIN_AGE=600*1000;
 
-const img   = document.getElementById('view');
-const stamp = document.getElementById('stamp');
-const note  = document.getElementById('note');
-const btns  = { brel:   document.getElementById('brel'),
-                delta:  document.getElementById('delta'),
-                erasme: document.getElementById('erasme') };
-
-let depot = localStorage.getItem('tdid_depot') || 'brel';
-let lastOk = 0;
-let lastBlobUrl = null;
-const lastAgeSeen = { brel:0, delta:0, erasme:0 };
-
-function setActive(){ for (const k in btns) btns[k].classList.toggle('active', k===depot); }
-for (const k in btns){ btns[k].onclick = ()=>{ depot=k; localStorage.setItem('tdid_depot', depot); setActive(); tick(true); }; }
-setActive();
-
-const bust = () => 't=' + Date.now();
-const ver  = (base, v) => base + (base.includes('?')?'&':'?') + 'v=' + v + '&' + bust();
-
-/* Timestamp → epoch ms ; corrige si epoch "local" (Excel/VBA) */
-function normalizeEpoch(raw){
-  let ms = Number(String(raw).trim());
-  if (!Number.isFinite(ms)) return null;
-  if (ms < 1e12) ms *= 1000;              // secondes -> ms
-  const nowUtc = Date.now();
-  if (ms - nowUtc > 10*60*1000) {         // semble futur => epoch local
-    const offsetMin = new Date().getTimezoneOffset(); // UTC - local (souvent -60 / -120)
-    ms = ms + offsetMin*60000;            // ✅ UTC = local + offset
-  }
-  return ms;
-}
-
-/* Lire age.txt (no-store) + heure serveur (header Date) */
-async function readAge(url){
+/* Night window detection (Brussels local time) */
+function isNightWindow(){
   try{
-    const r = await fetch(url + (url.includes('?')?'&':'?') + bust(), {cache:'no-store'});
-    if (!r.ok) return {ms:null, why:'HTTP '+r.status, serverNow:null};
-    const serverNow = r.headers.get('Date') ? new Date(r.headers.get('Date')).getTime() : null;
-    const ms = normalizeEpoch((await r.text()).trim());
-    return {ms, why:null, serverNow};
-  }catch{ return {ms:null, why:'fetch', serverNow:null}; }
+    const fmt=new Intl.DateTimeFormat('fr-BE',{hour:'2-digit',hour12:false,timeZone:'Europe/Brussels'});
+    const h=+fmt.format(new Date());
+    return h>=1 && h<4;
+  }catch{return false;}
 }
 
-/* Charger une image en blob (anti-cache CDN) */
-async function loadImageNoStore(srcWithVersion){
+/* Check if TDID_Night.png exists */
+async function nightImageExists(){
   try{
-    const r = await fetch(srcWithVersion, {cache:'no-store'});
-    if (!r.ok) throw new Error('HTTP '+r.status);
-    const blob = await r.blob();
-    if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-    const url = URL.createObjectURL(blob);
-    return url;
-  }catch{ return null; }
+    const r=await fetch(TDID_NIGHT_IMG,{method:'HEAD',cache:'no-store'});
+    return r.ok;
+  }catch{return false;}
 }
 
-async function tick(force=false){
-  const {img:imgBase, age:ageUrl} = DATA[depot];
-  let diag = `Depot: ${depot}\n`;
+/* Display night overlay */
+function showNightOverlay(){
+  const overlay=document.getElementById('nightOverlay');
+  const l1=document.getElementById('nightLine1');
+  const l2=document.getElementById('nightLine2');
+  overlay.style.display='flex';
+  let toggle=false;
+  setInterval(()=>{
+    toggle=!toggle;
+    l1.textContent="Mode Night 🌙";
+    l2.textContent=toggle?"Bonne nuit":"Goede nacht";
+  },5000);
+}
 
-  // 1) Lire l'âge
-  const info = await readAge(ageUrl);
-  if (info.ms !== null){
-    const nowRef = info.serverNow ?? Date.now();
-    let dSec = Math.round((nowRef - info.ms)/1000);
-    if (Math.abs(dSec) > 86400) dSec = Math.round((Date.now()-info.ms)/1000); // garde-fou 24h
+/* Main tick logic */
+async function tick(){
+  const img=document.getElementById('view');
+  const night=isNightWindow();
 
-    diag += `age.txt OK • Δ=${dSec}s → ${dSec>=STALE_SEC ? 'STALE' : 'OK'}`;
-
-    // 1a) trop vieux → écran erreur immédiat (à 120 s)
-    if (dSec >= STALE_SEC){
-      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
-      img.src = ERR_IMG;
-      stamp.textContent = "Hors service (≥2 min) • " + new Date().toLocaleString();
-      note.textContent = diag + "\n→ Affichage Erreur";
-      return;
-    }
-
-    // 1b) l'âge a changé → on charge l'image versionnée par cet age
-    const ageChanged = info.ms !== lastAgeSeen[depot];
-    const imgUrlV = ver(imgBase, info.ms); // 👈 URL unique par âge (= anti-cache dur)
-    if (force || ageChanged){
-      const blobUrl = await loadImageNoStore(imgUrlV);
-      if (blobUrl){
-        img.onload = ()=>{ lastOk = Date.now(); stamp.textContent = new Date().toLocaleString(); };
-        img.onerror= ()=>{ stamp.textContent = "Erreur de chargement • " + new Date().toLocaleString(); };
-        lastBlobUrl = blobUrl; img.src = blobUrl; lastAgeSeen[depot] = info.ms;
-      }else if (!force && lastOk>0 && (Math.round((Date.now()-lastOk)/1000) >= STALE_SEC)){
-        if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
-        img.src = ERR_IMG; diag += "\nimage KO → Erreur";
+  if(night){
+    // On ne fait rien d’autre la nuit
+    if(!window._nightShown){
+      const ageExceeded=true; // tu peux lier à ton cache si besoin
+      if(ageExceeded){
+        const hasNightImg=await nightImageExists();
+        if(hasNightImg){
+          img.src=TDID_NIGHT_IMG;
+        }else{
+          showNightOverlay();
+        }
+        window._nightShown=true;
       }
     }
-  } else {
-    diag += `age.txt indisponible (${info.why}) • fallback sur image`;
-    // fallback image avec cache-buster simple
-    const blobUrl = await loadImageNoStore(DATA[depot].img + '?'+bust());
-    if (blobUrl){ lastBlobUrl = blobUrl; img.src = blobUrl; lastOk = Date.now(); }
+    return;
   }
 
-  note.textContent = diag;
+  // ton code normal ici (hors créneau nuit)
 }
 
-setInterval(()=>tick(false), REFRESH_MS);
-tick(true);
+setInterval(tick,6000);
+tick();
 </script>
 </body>
 </html>
