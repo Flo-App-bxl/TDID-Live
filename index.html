@@ -234,7 +234,7 @@ async function loadSpImage(k){
   return {ok:false,reason:'Load failed'};
 }
 
-/* latest.json (avec RAW→CDN→API et trace) */
+/* latest.json (RAW→CDN→API) + ***anti-régression*** */
 async function fetchLatest(k,forceApi=false){
   const now=Date.now();
   if(!forceApi && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latest[k]) return latest[k];
@@ -269,13 +269,25 @@ async function fetchLatest(k,forceApi=false){
 
   const it=j?.items?.[k];
   if(!it?.ts) throw new Error('bad json');
-  let imgUrl=it.url;
+
+  const tsMs = Number(it.ts) * 1000;
+  let imgUrl = it.url;
   if(!imgUrl){
     const f=(it.file||'').split('/').pop();
     if(!f) throw new Error('no file');
     imgUrl = `${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
   }
-  latest[k]={ts:Number(it.ts)*1000, url:imgUrl};
+
+  /* >>> ANTI-RÉGRESSION TEMPORELLE <<<
+     - On ne remplace le cache que si le nouveau ts est >= à l'actuel.
+     - Sinon on conserve la version la plus fraîche (typiquement celle de l'API). */
+  const prev = latest[k];
+  if(prev && tsMs < prev.ts){
+    // On garde la version plus fraîche déjà en mémoire
+    return prev;
+  }
+
+  latest[k] = { ts: tsMs, url: imgUrl };
   forceFetch=false;
   return latest[k];
 }
@@ -325,7 +337,6 @@ async function tick(){
       }
       return;
     }else if(preferSPThisTick){
-      // Petit hint si on vient de quitter SP
       dbg([`mode: SP?`, `SP: KO(${sp.reason||'?'})`, `hint: retry SP next tick`]);
     }
   }
