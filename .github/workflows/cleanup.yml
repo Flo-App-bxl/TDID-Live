@@ -1,0 +1,104 @@
+permissions:
+  contents: write
+
+name: Auto-clean folders
+
+on:
+  schedule:
+    - cron: "*/2 * * * *"  # toutes les 3 minutes
+  workflow_dispatch:         # permet aussi de le lancer à la main
+
+# Empêche plusieurs exécutions concurrentes du même workflow sur la même branche
+concurrency:
+  group: auto-clean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # nécessaire pour git pull --rebase
+          persist-credentials: true   # garde le token pour git push
+
+      - name: Check and clean folders
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # --- Paramètres ---
+          MAX_FILES=10
+          FOLDERS=("mirror_brel" "mirror_delta" "mirror_erasme")
+
+          for FOLDER in "${FOLDERS[@]}"; do
+            echo "🔍 Vérification du dossier $FOLDER..."
+            if [ ! -d "$FOLDER" ]; then
+              echo "ℹ️ Dossier $FOLDER introuvable, on passe."
+              continue
+            fi
+
+            # Nombre total de fichiers dans le dossier (sous-dossiers compris)
+            COUNT=$(find "$FOLDER" -type f | wc -l || echo 0)
+            echo "→ $COUNT fichiers détectés"
+
+            if [ "$COUNT" -gt "$MAX_FILES" ]; then
+              echo "⚠️ Trop de fichiers ($COUNT > $MAX_FILES), on garde seulement le plus récent..."
+
+              # Récupérer le fichier le plus récent (par date de modification)
+              LATEST_FILE=$(find "$FOLDER" -type f -printf '%T@ %p\n' \
+                | sort -nr \
+                | head -n 1 \
+                | cut -d' ' -f2-)
+
+              if [ -z "$LATEST_FILE" ]; then
+                echo "❌ Impossible de déterminer le fichier le plus récent, on ne supprime rien."
+                continue
+              fi
+
+              echo "🟢 Fichier le plus récent conservé : $LATEST_FILE"
+
+              # Supprimer tous les fichiers sauf le plus récent
+              find "$FOLDER" -type f ! -path "$LATEST_FILE" -print -delete
+
+              # Optionnel : supprimer les dossiers vides restants
+              find "$FOLDER" -type d -empty -print -delete
+
+            else
+              echo "✅ OK : $FOLDER contient $COUNT fichiers (<= $MAX_FILES), rien à faire."
+            fi
+          done
+
+      - name: Commit and push if changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Aucun changement à pousser."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "Auto-clean: ne garde que le fichier le plus récent"
+
+          BRANCH="${GITHUB_REF_NAME}"
+
+          # On tente plusieurs fois en se rebasant si nécessaire
+          for i in 1 2 3; do
+            git pull --rebase origin "$BRANCH" || true
+            if git push origin "$BRANCH"; then
+              echo "✅ Push réussi."
+              exit 0
+            fi
+            echo "⚠️ Push échoué, nouvel essai dans 5s ($i/3)…"
+            sleep 5
+          done
+
+          echo "❌ Push impossible après 3 tentatives."
+          exit 1
