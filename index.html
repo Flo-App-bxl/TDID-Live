@@ -63,8 +63,9 @@
     display:flex;
     flex-direction:column;
     align-items:center;
-    justify-content:center;
-    padding:5vh 4vw;
+    justify-content:flex-start;
+    padding-top:15vh;  /* remonte le bloc logo+texte */
+    padding-inline:4vw;
     color:#eaeef5;
     text-align:center;
   }
@@ -173,9 +174,9 @@ const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 
 /* Image mode nuit + seuils */
-const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
-const NIGHT_MIN_AGE = 600 * 1000;        // 10 min : on affiche Made Night
-const NIGHT_OFF_AGE = 5 * 60 * 1000;     // 5 min : si plus frais, on coupe Made Night
+const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`; // image/icone de nuit
+const NIGHT_MIN_AGE = 600 * 1000;        // ≥ 600s -> overlay Night
+const NIGHT_OFF_AGE = 5 * 60 * 1000;     // < 5 min -> on coupe l'overlay
 
 /* périodicités et seuils */
 const REFRESH_MS=6000, FETCH_MIN=60000, MIRROR_FORCE_MS=60000;
@@ -289,7 +290,19 @@ function isNightWindow(){
 }
 
 /* Helpers */
-function setTop(status,label){led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleString()}`;}
+function setTop(status,label){
+  const night=isNightWindow();
+  if(night){
+    // témoin lune + texte Night
+    led.textContent='🌙';
+    led.className=''; // supprime les classes ok/warn/err
+    stamp.textContent=`Night • ${new Date().toLocaleString()}`;
+  }else{
+    led.textContent='';
+    led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');
+    stamp.textContent=`${label} • ${new Date().toLocaleString()}`;
+  }
+}
 function showBanner(show){
   // Jamais de bandeau en mode nuit
   if(isNightWindow()){ banner.style.display='none'; return; }
@@ -384,79 +397,83 @@ async function fetchLatest(k,forceApi=false){
   return latest[k];
 }
 
-/* Affichage Night (TDID_Night ou overlay) */
-async function showNightScreen(){
-  // On n'arrête plus totalement la logique SP/miroir, juste l'affichage
-  showBanner(false);
-
-  if(nightOverlay){
-    nightOverlay.style.display='none';
-  }
-
-  // On tente d’abord l’image TDID_Night
-  const ok = await renderFrom(TDID_NIGHT_IMG,{status:'ok',text:'Night'});
-  if(ok){
-    if(nightOverlay) nightOverlay.style.display='none';
-    return;
-  }
-
-  // Fallback overlay texte
-  if(!nightOverlay) return;
-  nightOverlay.style.display='flex';
-  if(nightToggleTimer) clearInterval(nightToggleTimer);
-  let toggle=false;
-  nightLine1.textContent="Made Night 🌙";
-  nightLine2.textContent="Bonne nuit";
-  nightToggleTimer = setInterval(()=>{
-    toggle=!toggle;
-    nightLine1.textContent="Made Night 🌙";
-    nightLine2.textContent=toggle?"Bonne nuit":"Goede nacht";
-  },5000);
-}
-
-/* Gestion de l'overlay nuit en fonction de l'âge du latest */
-async function handleNightOverlay(k){
+/* Gestion de l'overlay nuit : affiche TDID_Night en fond + texte selon âge latest */
+async function handleNightMode(k){
   const inNight=isNightWindow();
-  const L = latest[k];
-  const ageMs = L ? (Date.now() - L.ts) : Infinity;
-  const ageSec = Math.round(ageMs/1000);
-
   if(!inNight){
-    // hors mode nuit : on enlève tout
+    // hors mode nuit -> reset overlay
     if(nightOverlay) nightOverlay.style.display='none';
     nightShown=false;
     if(nightToggleTimer){ clearInterval(nightToggleTimer); nightToggleTimer=null; }
-    return;
+    return false;
   }
 
-  // Debug spécifique nuit (en plus du debug SP/miroir)
+  // On ne montre jamais le bandeau la nuit
+  showBanner(false);
+
+  // Fond : toujours TDID_Night.png en mode nuit
+  await renderFrom(TDID_NIGHT_IMG,{status:'ok',text:'Night'});
+
+  // On récupère/rafraîchit latest (sans API)
+  let L=null, ageMs=Infinity;
+  try{
+    L = await fetchLatest(k,false);
+    if(L) ageMs = Date.now()-L.ts;
+  }catch{}
+
+  const ageSec = isFinite(ageMs)?Math.round(ageMs/1000):null;
+
+  // Debug nuit
   dbg([
-    note.textContent,
-    `NIGHT Δ=${isFinite(ageMs)?ageSec+'s':'∞'}`,
-    `nightShown:${nightShown?'ON':'OFF'}`
-  ]);
+    `mode: NIGHT`,
+    L ? `latest: ${lastSource[k]}` : `latest: none`,
+    lastHttp[k] ? `trace: ${lastHttp[k]}` : '',
+    ageSec!=null ? `Δ=${ageSec}s` : '',
+    `overlay:${nightShown?'ON':'OFF'}`
+  ].filter(Boolean));
 
-  showBanner(false); // sécurité : jamais de bandeau en mode nuit
-
+  // Logique overlay
   if(ageMs >= NIGHT_MIN_AGE){
-    if(!nightShown){
-      await showNightScreen();
+    if(!nightShown && nightOverlay){
+      nightOverlay.style.display='flex';
+      if(nightToggleTimer) clearInterval(nightToggleTimer);
+      let toggle=false;
+      nightLine1.textContent="Made Night 🌙";
+      nightLine2.textContent="Bonne nuit";
+      nightToggleTimer = setInterval(()=>{
+        toggle=!toggle;
+        nightLine1.textContent="Made Night 🌙";
+        nightLine2.textContent=toggle?"Bonne nuit":"Goede nacht";
+      },5000);
       nightShown=true;
     }
   }else if(ageMs < NIGHT_OFF_AGE){
-    // latest assez frais -> on coupe le mode nuit
-    if(nightShown){
-      if(nightOverlay) nightOverlay.style.display='none';
+    if(nightShown && nightOverlay){
+      nightOverlay.style.display='none';
       nightShown=false;
       if(nightToggleTimer){ clearInterval(nightToggleTimer); nightToggleTimer=null; }
     }
   }
+  return true;
 }
 
 /* Tick principal */
 async function tick(){
   const k=depot;
   const inNight=isNightWindow();
+
+  // ——— Branche spéciale mode nuit ———
+  if(inNight){
+    leaveMirror();      // on ne force pas le miroir la nuit
+    updateBtn(false);
+    await handleNightMode(k);
+    return;
+  }
+
+  // Sortie éventuelle du mode nuit -> reset overlay
+  if(nightOverlay) nightOverlay.style.display='none';
+  nightShown=false;
+  if(nightToggleTimer){ clearInterval(nightToggleTimer); nightToggleTimer=null; }
 
   const override = overrideActive();
   const preferSPThisTick = preferSPNext; preferSPNext=false;
@@ -474,14 +491,14 @@ async function tick(){
         let ageMs = Date.now() - L.ts;
         let forced = false;
 
-        // En mode SP : si Δ miroir > 280s → force un appel API one-shot (hors nuit)
-        if(ageMs > SP_FORCE_API_GT && !inNight){
+        // En mode SP : si Δ miroir > 280s → force un appel API one-shot (jour uniquement)
+        if(ageMs > SP_FORCE_API_GT){
           const L2 = await fetchLatest(k,true);
           if(L2){ L=L2; ageMs = Date.now()-L.ts; forced = true; }
         }
 
         const ageSec = Math.round(ageMs/1000);
-        bannerLatch[k] = (!inNight && ageMs > BANNER_GT5) ? true : false;
+        bannerLatch[k] = ageMs > BANNER_GT5 ? true : false;
         showBanner(bannerLatch[k]);
 
         dbg([
@@ -498,8 +515,6 @@ async function tick(){
         showBanner(false);
         dbg([`mode: SP`, `SP: OK(${sp.via})`, `latest: KO`, `trace: ${lastHttp[k]||e.message}`, `source: SP`]);
       }
-
-      await handleNightOverlay(k);
       return;
     }else if(preferSPThisTick){
       dbg([`mode: SP?`, `SP: KO(${sp.reason||'?'})`, `hint: retry SP next tick`]);
@@ -511,28 +526,22 @@ async function tick(){
 
   let L=null;
   try{
-    const forceApi = !isNightWindow();
-    L = await fetchLatest(k,forceApi);
+    L = await fetchLatest(k,true); // en journée, API autorisée
   }
   catch(e){
     const cached=lastMirror[k];
     if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
       await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
-      dbg([`mode: Miroir`, `API/latest: KO`, `affiche: cache ≤60s`]);
-      await handleNightOverlay(k);
-      return;
+      dbg([`mode: Miroir`, `API/latest: KO`, `affiche: cache ≤60s`]); return;
     }
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); showBanner(false);
-    dbg([`mode: Miroir`, `API/latest: KO`, `affiche: erreur`]);
-    await handleNightOverlay(k);
-    return;
+    dbg([`mode: Miroir`, `API/latest: KO`, `affiche: erreur`]); return;
   }
 
   const ageMs=Date.now()-L.ts, ageSec=Math.round(ageMs/1000);
   if(ageMs>MIRROR_ERR_10){
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'}); showBanner(false);
     dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: erreur`]);
-    await handleNightOverlay(k);
     return;
   }
 
@@ -541,7 +550,6 @@ async function tick(){
     lastMirror[k]={url:L.url,time:Date.now()};
     showBanner(false);
     dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: miroir`]);
-    await handleNightOverlay(k);
     return;
   }
 
@@ -553,8 +561,6 @@ async function tick(){
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'}); showBanner(false);
     dbg([`mode: Miroir`, `miroir: KO`, `affiche: erreur`]);
   }
-
-  await handleNightOverlay(k);
 }
 
 /* Start */
