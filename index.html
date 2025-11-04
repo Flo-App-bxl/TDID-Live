@@ -13,6 +13,7 @@
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   body{display:flex;flex-direction:column}
+
   .top{flex-shrink:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);z-index:5}
   .brand{font-weight:700;margin-right:8px}
   .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:#141923;color:var(--fg);cursor:pointer}
@@ -23,99 +24,96 @@
   .stamp{opacity:.9;font-size:.9em}
   .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
   .toggle.active{background:#2a3347}
-  .wrap{flex:1; display:flex; align-items:center; justify-content:center; position:relative; height:100svh; overflow:auto;}
+
+  .wrap{flex:1;display:flex;align-items:center;justify-content:center;position:relative;height:100svh;overflow:auto;}
   .wrap::-webkit-scrollbar{display:none}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
+
   .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
-  .banner{position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);background:rgba(242,182,54,0.85);color:#000;padding:26px 32px;border-radius:18px;font-weight:700;font-size:1.9em;z-index:20;display:none;overflow:hidden;white-space:nowrap;width:85vw;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.3);}
+
+  .banner{position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);background:rgba(242,182,54,0.75);color:#000;
+    padding:26px 32px;border-radius:18px;font-weight:700;font-size:1.5em;z-index:20;display:none;overflow:hidden;white-space:nowrap;width:85vw;text-align:center;
+    box-shadow:0 4px 16px rgba(0,0,0,0.3);}
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
-  .splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0f1115e0;z-index:30}
-  .splash video{max-width:80vw;border-radius:10px}
-  .splash .skip{position:absolute;bottom:20px;right:20px;padding:8px 14px;background:#1b2130;color:#fff;border:1px solid var(--line);border-radius:10px;cursor:pointer}
-  .rotate{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#0f1115cf;z-index:25}
-  .rotate .box{padding:16px 20px;border:1px solid var(--line);border-radius:12px;background:#161a24;text-align:center}
-  .night-overlay{position:absolute;inset:0;background:rgba(5,6,10,0.94);display:none;z-index:15;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:15vh;padding-inline:4vw;color:#eaeef5;text-align:center;}
+
+  .fsbtn{position:fixed;right:12px;top:72px;z-index:26;padding:8px 12px;border-radius:10px;border:1px solid var(--line);
+    background:#141923;color:#fff;font-size:.9em;display:none;cursor:pointer;}
+
+  /* Overlay mode nuit */
+  .night-overlay{position:absolute;inset:0;background:rgba(5,6,10,0.94);display:none;z-index:50;flex-direction:column;align-items:center;justify-content:flex-start;
+    padding-top:15vh;padding-inline:4vw;color:#eaeef5;text-align:center;}
   .night-logo{width:220px;max-width:60vw;margin-bottom:20px;}
   #nightLine1{font-size:2.7em;font-weight:700;margin:8px 0;}
   #nightLine2{font-size:2.1em;margin:6px 0;}
-  .fsbtn{position:fixed;right:12px;top:72px;z-index:26;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#141923;color:#fff;font-size:.9em;display:none;cursor:pointer;}
 </style>
 </head>
 
 <body>
-<div class="top" id="topbar">
-  <span class="brand">TDID Live</span>
-  <button class="btn" id="brel">Brel</button>
-  <button class="btn" id="delta">Delta</button>
-  <button class="btn" id="erasme">Erasm.</button>
-  <div class="status">
-    <button id="forceMirror" class="toggle">Miroir 15 min</button>
-    <span id="led" class="dot"></span>
-    <span id="stamp">—</span>
-  </div>
-</div>
-
-<button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
-
-<div class="banner" id="banner">
-  <span>Refresh &gt; 5 min – vérifier fiabilité via ‘Last Refresh’ • Refresh &gt; 5 min – controleer betrouwbaarheid via ‘Last Refresh’</span>
-</div>
-
-<div class="wrap">
-  <div class="splash" id="splash">
-    <video id="intro" autoplay muted playsinline preload="auto"
-      src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro.mp4"></video>
-    <button class="skip" id="skipIntro">Passer</button>
+  <div class="top" id="topbar">
+    <span class="brand">TDID Live</span>
+    <button class="btn" id="brel">Brel</button>
+    <button class="btn" id="delta">Delta</button>
+    <button class="btn" id="erasme">Erasm.</button>
+    <div class="status">
+      <button id="forceMirror" class="toggle">Miroir 15 min</button>
+      <span id="led" class="dot"></span>
+      <span id="stamp">—</span>
+    </div>
   </div>
 
-  <div class="rotate" id="rotateHint">
-    <div class="box">📱 Tournez votre téléphone en mode paysage<br/>📱 Draai uw telefoon naar la liggende stand</div>
+  <button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
+
+  <div class="banner" id="banner">
+    <span>Refresh &gt; 5 min – vérifier fiabilité via ‘Last Refresh’ • Refresh &gt; 5 min – controleer betrouwbaarheid via ‘Last Refresh’</span>
   </div>
 
-  <img id="view" alt="TDID Live" />
-
-  <div class="night-overlay" id="nightOverlay">
-    <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
-    <div id="nightLine1">Made Night 🌙</div>
-    <div id="nightLine2">Bonne nuit</div>
+  <div class="wrap">
+    <img id="view" alt="TDID Live" />
+    <div class="night-overlay" id="nightOverlay">
+      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
+      <div id="nightLine1">Made Night 🌙</div>
+      <div id="nightLine2">Bonne nuit</div>
+    </div>
   </div>
-</div>
-<div class="note" id="note"></div>
+  <div class="note" id="note"></div>
 
 <script>
+/* ======== CONFIG GÉNÉRALE ======== */
 const GH_USER="Flo-App-bxl", GH_REPO="TDID-Live", GH_BRANCH="main";
 const GH_RAW=`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
 const JSDELIVR=`https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
-const GH_API=`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
-const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
-const NIGHT_MIN_AGE=600000, NIGHT_OFF_AGE=300000;
 
-/* Lecture du paramètre de test */
+const NIGHT_MIN_AGE=600000, NIGHT_OFF_AGE=300000; // 10min / 5min
+const NIGHT_START=60, NIGHT_END=225; // 01h00–03h45
+
+/* lecture du paramètre test */
 const params=new URLSearchParams(location.search);
 const forceNight=params.get('night');
 
-/* Détection du mode nuit (normal ou forcé) */
+/* Détection mode nuit */
 function isNightWindow(){
   if(forceNight==="1") return true;
   if(forceNight==="0") return false;
-  const d=new Date(), h=d.getHours(), m=d.getMinutes();
+  const d=new Date(),h=d.getHours(),m=d.getMinutes();
   const total=h*60+m;
-  return (total>=60 && total<225);
+  return total>=NIGHT_START && total<NIGHT_END;
 }
 
+/* DOM refs */
 const img=document.getElementById('view'),
+      note=document.getElementById('note'),
       led=document.getElementById('led'),
       stamp=document.getElementById('stamp'),
       banner=document.getElementById('banner'),
-      note=document.getElementById('note'),
       nightOverlay=document.getElementById('nightOverlay'),
       nightLine1=document.getElementById('nightLine1'),
       nightLine2=document.getElementById('nightLine2');
 
-let latest={brel:null,delta:null,erasme:null}, lastHttp={}, lastSource={}, nightShown=false, nightToggleTimer=null;
+let nightShown=false, nightTimer=null;
 
+/* MàJ témoin */
 function setTop(status,label){
   const night=isNightWindow();
   if(night){led.textContent='🌙';led.className='';stamp.textContent=`Night • ${new Date().toLocaleTimeString()}`;}
@@ -124,45 +122,55 @@ function setTop(status,label){
 function showBanner(show){if(isNightWindow()) banner.style.display='none'; else banner.style.display=show?'block':'none';}
 function dbg(parts){note.textContent=parts.filter(Boolean).join(' | ');}
 
-async function fetchLatest(k){
+/* Simule récupération latest (mock) */
+async function fetchLatest(){
   const now=Date.now();
-  const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
-  const urls=[{u:`${GH_RAW}${path}?x=${Math.floor(now/60000)}`,tag:'RAW'},{u:`${JSDELIVR}${path}?x=${Math.floor(now/60000)}`,tag:'CDN'}];
+  const urls=[
+    {u:`${GH_RAW}/time_brel/latest.json?x=${Math.floor(now/60000)}`,tag:'RAW'},
+    {u:`${JSDELIVR}/time_brel/latest.json?x=${Math.floor(now/60000)}`,tag:'CDN'}
+  ];
   let trace=[],source='-';
   async function tryJson(u,t){try{const r=await fetch(u,{cache:'no-store'});trace.push(`${t}:${r.status}`);if(!r.ok)return null;source=t;return await r.json();}catch{return null;}}
   let j=null;for(const {u,tag} of urls){j=await tryJson(u,tag);if(j)break;}
-  lastHttp[k]=trace.join(' ');lastSource[k]=source;
   if(!j) throw new Error('fetch failed');
-  const it=j?.items?.[k];if(!it?.ts) throw new Error('bad json');
-  const tsMs=Number(it.ts)*1000;let imgUrl=it.url;
-  if(!imgUrl){const f=(it.file||'').split('/').pop();imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
-  latest[k]={ts:tsMs,url:imgUrl};return latest[k];
+  const it=j?.items?.brel;return {ts:Number(it.ts)*1000,url:it.url,source};
 }
 
-function renderFrom(src,label){return new Promise(r=>{const i=new Image();i.onload=()=>{img.src=i.src;setTop('ok',label);r(true)};i.onerror=()=>r(false);i.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
-
-async function handleNight(k){
+/* Mode nuit */
+async function handleNight(){
   const inNight=isNightWindow();
-  if(!inNight){nightOverlay.style.display='none';nightShown=false;if(nightToggleTimer){clearInterval(nightToggleTimer);nightToggleTimer=null;}return;}
+  if(!inNight){nightOverlay.style.display='none';nightShown=false;clearInterval(nightTimer);return;}
   showBanner(false);
   await renderFrom(TDID_NIGHT_IMG,'Night');
-  let L=null,ageMs=Infinity;try{L=await fetchLatest(k);if(L)ageMs=Date.now()-L.ts;}catch{}
+  let L=null,ageMs=Infinity;
+  try{L=await fetchLatest();if(L)ageMs=Date.now()-L.ts;}catch{}
   if(ageMs>=NIGHT_MIN_AGE && !nightShown){
     nightOverlay.style.display='flex';
-    let t=false;nightLine1.textContent="Made Night 🌙";nightLine2.textContent="Bonne nuit";
-    nightToggleTimer=setInterval(()=>{t=!t;nightLine2.textContent=t?"Bonne nuit":"Goede nacht";},5000);
+    let toggle=false;
+    nightLine1.textContent="Made Night 🌙";
+    nightLine2.textContent="Bonne nuit";
+    nightTimer=setInterval(()=>{toggle=!toggle;nightLine2.textContent=toggle?"Bonne nuit":"Goede nacht";},5000);
     nightShown=true;
   } else if(ageMs<NIGHT_OFF_AGE && nightShown){
-    nightOverlay.style.display='none';nightShown=false;clearInterval(nightToggleTimer);
+    nightOverlay.style.display='none';nightShown=false;clearInterval(nightTimer);
   }
 }
 
+/* Affiche une image */
+function renderFrom(src,label){return new Promise(res=>{const i=new Image();i.onload=()=>{img.src=i.src;setTop('ok',label);res(true)};i.onerror=()=>res(false);i.src=src;} );}
+
+/* Tick principal */
 async function tick(){
-  const k='brel',inNight=isNightWindow();
-  if(inNight){await handleNight(k);return;}
-  try{const L=await fetchLatest(k);await renderFrom(L.url,'Live');}catch(e){await renderFrom(TDID_NIGHT_IMG,'Erreur');}
+  const night=isNightWindow();
+  if(night){await handleNight();return;}
+  try{
+    const L=await fetchLatest();
+    await renderFrom(L.url,'Live');
+    dbg([`mode:DAY`,`source:${L.source}`]);
+  }catch{await renderFrom(TDID_NIGHT_IMG,'Erreur');}
 }
 
+/* Boucle */
 (async()=>{await tick();setInterval(()=>tick(),6000);})();
 </script>
 </body>
