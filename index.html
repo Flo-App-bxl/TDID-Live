@@ -402,12 +402,14 @@ async function fetchLatest(k,forceApi=false){
   forceFetch=false;
   return latest[k];
 }
+function showBanner(show){
+  banner.style.display = show ? 'block' : 'none';
+}
 
 /* Affichage Night (TDID_Night ou overlay) */
 /* Affichage Night (overlay visuel) */
 async function showNightScreen() {
   if (!nightOverlay) return;
-
   showBanner(false);
 
   // Affiche l’overlay
