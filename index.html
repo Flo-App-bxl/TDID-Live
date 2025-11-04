@@ -37,8 +37,9 @@
 
   .banner{
     position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);
-    background:rgba(242,182,54,0.75);color:#000;
-    padding:26px 32px;border-radius:18px;font-weight:700;font-size:1.5em;
+    background:rgba(242,182,54,0.85);color:#000;
+    padding:26px 32px;border-radius:18px;font-weight:700;
+    font-size:1.9em;              /* police agrandie */
     z-index:20;display:none;overflow:hidden;white-space:nowrap;width:85vw;text-align:center;
     box-shadow:0 4px 16px rgba(0,0,0,0.3);
   }
@@ -52,27 +53,33 @@
   .rotate{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#0f1115cf;z-index:25}
   .rotate .box{padding:16px 20px;border:1px solid var(--line);border-radius:12px;background:#161a24;text-align:center}
 
-  /* Overlay mode nuit */
+  /* Overlay mode nuit : couvre la zone image (wrap), pas la topbar */
   .night-overlay{
-    position:fixed;
+    position:absolute;
     inset:0;
-    background:rgba(5,6,10,0.92);
+    background:rgba(5,6,10,0.94);
     display:none;
+    z-index:15; /* au-dessus de l'image, en-dessous du bandeau (20) et splash (30) */
+    display:flex;
     flex-direction:column;
     align-items:center;
-    justify-content:flex-start;
-    padding-top:12vh;
-    z-index:35;
+    justify-content:center;
+    padding:5vh 4vw;
     color:#eaeef5;
     text-align:center;
   }
   .night-logo{
-    width:160px;
-    max-width:50vw;
-    margin-bottom:16px;
+    width:220px;
+    max-width:60vw;
+    margin-bottom:20px;
   }
-  .night-line{
-    font-size:1.6em;
+  #nightLine1{
+    font-size:2.7em;
+    font-weight:700;
+    margin:8px 0;
+  }
+  #nightLine2{
+    font-size:2.1em;
     margin:6px 0;
   }
 
@@ -82,7 +89,7 @@
   @media (pointer:coarse){
     .top{height:52px;padding:8px}
     .btn{padding:6px 10px}
-    .banner{font-size:1.25em}
+    .banner{font-size:1.6em}
     .wrap{align-items:stretch}
     img{height:100vh;max-height:100vh}
     .fsbtn{top:12px}
@@ -144,14 +151,15 @@
       </div>
     </div>
 
-    <!-- Overlay Night mode -->
-    <div class="night-overlay" id="nightOverlay">
-      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
-      <div class="night-line" id="nightLine1">Mode Night 🌙</div>
-      <div class="night-line" id="nightLine2">Bonne nuit</div>
-    </div>
-
     <img id="view" alt="TDID Live" />
+
+    <!-- Overlay Night mode qui recouvre la zone image -->
+    <div class="night-overlay" id="nightOverlay">
+      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg"
+           class="night-logo" alt="TDID logo">
+      <div id="nightLine1">Made Night 🌙</div>
+      <div id="nightLine2">Bonne nuit</div>
+    </div>
   </div>
   <div class="note" id="note"></div>
 
@@ -363,8 +371,9 @@ async function showNightScreen(){
   updateBtn(false);
   showBanner(false);
 
-  // Évite plusieurs intervals d’alternance
-  if(nightOverlay) nightOverlay.style.display='none';
+  if(nightOverlay){
+    nightOverlay.style.display='none';
+  }
 
   // On tente d’abord l’image TDID_Night
   const ok = await renderFrom(TDID_NIGHT_IMG,{status:'ok',text:'Night'});
@@ -378,11 +387,11 @@ async function showNightScreen(){
   nightOverlay.style.display='flex';
   if(nightToggleTimer) clearInterval(nightToggleTimer);
   let toggle=false;
-  nightLine1.textContent="Mode Night 🌙";
+  nightLine1.textContent="Made Night 🌙";
   nightLine2.textContent="Bonne nuit";
   nightToggleTimer = setInterval(()=>{
     toggle=!toggle;
-    nightLine1.textContent="Mode Night 🌙";
+    nightLine1.textContent="Made Night 🌙";
     nightLine2.textContent=toggle?"Bonne nuit":"Goede nacht";
   },5000);
 }
@@ -397,8 +406,7 @@ async function tick(){
     leaveMirror();
     updateBtn(false);
     showBanner(false);
-    if(nightOverlay && !nightShown){
-      // âge des données
+    if(!nightShown){
       const L = latest[k];
       const ageMs = L ? (Date.now() - L.ts) : Infinity;
       const ageSec = Math.round(ageMs/1000);
@@ -407,7 +415,6 @@ async function tick(){
         L ? `Δ=${ageSec}s` : `latest: none`,
         `seuil: 600s`
       ]);
-
       if(ageMs >= NIGHT_MIN_AGE){
         await showNightScreen();
         nightShown = true;
@@ -415,7 +422,7 @@ async function tick(){
     }
     return;
   } else {
-    // On sort du mode nuit → reset état overlay
+    // Sortie du mode nuit → reset overlay
     if(nightOverlay) nightOverlay.style.display='none';
     nightShown=false;
     if(nightToggleTimer){ clearInterval(nightToggleTimer); nightToggleTimer=null; }
