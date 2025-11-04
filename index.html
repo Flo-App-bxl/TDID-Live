@@ -455,7 +455,6 @@ async function handleNightOverlay(k){
   ]);
 
   showBanner(false); // jamais de bandeau la nuit
-
 if ((inNight || forceNight === "1") && (ageMs >= NIGHT_MIN_AGE || forceNight === "1")) {
   // ➤ En pleine nuit OU forçage manuel => affiche overlay
   if (!nightShown) {
