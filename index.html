@@ -449,12 +449,22 @@ async function handleNightOverlay(k){
 
   showBanner(false); // sécurité : jamais de bandeau en mode nuit
 
- if(inNight && ageMs >= NIGHT_MIN_AGE){
-    if(!nightShown){
-      await showNightScreen();
-      nightShown=true;
-    }
-  }else if(ageMs < NIGHT_OFF_AGE){
+ if (inNight && ageMs >= NIGHT_MIN_AGE) {
+  // ➤ En pleine nuit, données trop vieilles => affiche overlay
+  if (!nightShown) {
+    await showNightScreen();
+    nightShown = true;
+  }
+} else {
+  // ➤ Hors nuit ou données fraîches => cache overlay
+  if (nightOverlay) nightOverlay.style.display = 'none';
+  nightShown = false;
+  if (nightToggleTimer) {
+    clearInterval(nightToggleTimer);
+    nightToggleTimer = null;
+  }
+}
+
     // latest assez frais -> on coupe le mode nuit
     if(nightShown){
       if(nightOverlay) nightOverlay.style.display='none';
