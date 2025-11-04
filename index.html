@@ -262,7 +262,7 @@ forceBtn.addEventListener('click',()=>{overrideActive()?clearOverride():setOverr
 function enterMirror(startupKick=true){
   if(!isMirror){
     isMirror=true; updateBtn();
-    const inNight=isNightWindow();
+    const inNight = isNightActive();
     if(startupKick) fetchLatest(depot,!inNight).catch(()=>{});
     if(mirrorTimer) clearInterval(mirrorTimer);
     mirrorTimer=setInterval(()=>{
@@ -298,21 +298,28 @@ function isNightWindow() {
   }
 }
 
-
-
-
+function isNightActive() {
+  // night=0 → jamais nuit
+  if (forceNight === "0") return false;
+  // night=1 → toujours nuit (pour les éléments visuels)
+  if (forceNight === "1") return true;
+  // sinon, nuit réelle basée sur l'heure Bruxelles
+  return isNightWindow();
+}
 
 /* Helpers */
 function setTop(status,label){
-  if(isNightWindow()){
-    led.textContent='🌙';
-    led.className='';
-    stamp.textContent=`Night • ${new Date().toLocaleString()}`;
+  if (isNightActive()) {
+    led.textContent = '🌙';
+    led.className = '';
+    stamp.textContent = `Night • ${new Date().toLocaleString()}`;
   } else {
-    led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');
-    stamp.textContent=`${label} • ${new Date().toLocaleString()}`;
+    led.textContent = ''; // optionnel, pour virer la lune si on repasse en jour
+    led.className = 'dot ' + (status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'err');
+    stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
   }
 }
+
 
 function renderFrom(src,statusLabel){
   return new Promise(res=>{
