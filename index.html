@@ -459,15 +459,7 @@ async function handleNightOverlay(k){
 }
 
 
-    // latest assez frais -> on coupe le mode nuit
-    if(nightShown){
-      if(nightOverlay) nightOverlay.style.display='none';
-      nightShown=false;
-      if(nightToggleTimer){ clearInterval(nightToggleTimer); nightToggleTimer=null; }
-    }
-  }
-}
-
+   
 /* Tick principal */
 async function tick(){
   const k=depot;
