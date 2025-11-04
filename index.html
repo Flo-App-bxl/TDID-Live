@@ -13,7 +13,6 @@
   :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   body{display:flex;flex-direction:column}
-
   .top{flex-shrink:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);z-index:5}
   .brand{font-weight:700;margin-right:8px}
   .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:#141923;color:var(--fg);cursor:pointer}
@@ -71,29 +70,30 @@
 
   <div class="wrap">
     <img id="view" alt="TDID Live" />
+    <!-- Overlay nuit -->
     <div class="night-overlay" id="nightOverlay">
       <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
       <div id="nightLine1">Made Night 🌙</div>
       <div id="nightLine2">Bonne nuit</div>
     </div>
   </div>
+
   <div class="note" id="note"></div>
 
 <script>
-/* ====== Constantes ====== */
+/* ====== Constantes principales ====== */
 const GH_USER="Flo-App-bxl", GH_REPO="TDID-Live", GH_BRANCH="main";
-const GH_RAW = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
-const GH_API = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
-const JSDELIVR = `https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
+const GH_RAW=`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
+const GH_API=`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
+const JSDELIVR=`https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
-
-const NIGHT_MIN_AGE=600000, NIGHT_OFF_AGE=300000; // 10min / 5min
+const NIGHT_MIN_AGE=600000, NIGHT_OFF_AGE=300000;
 const params=new URLSearchParams(location.search);
 const forceNight=params.get('night');
 
-/* Détection mode nuit (01h00–03h45 Europe/Brussels) */
+/* Détection mode nuit (01h00–03h45 Europe/Brussels ou ?night=1) */
 function isNightWindow(){
   if(forceNight==="1") return true;
   if(forceNight==="0") return false;
@@ -102,28 +102,48 @@ function isNightWindow(){
   return total>=60 && total<225;
 }
 
-/* UI refs */
-const img=document.getElementById('view'), note=document.getElementById('note'),
-      led=document.getElementById('led'), stamp=document.getElementById('stamp'),
-      banner=document.getElementById('banner'),
-      nightOverlay=document.getElementById('nightOverlay'),
-      nightLine1=document.getElementById('nightLine1'),
-      nightLine2=document.getElementById('nightLine2');
+/* DOM refs */
+const img=document.getElementById('view'), led=document.getElementById('led'),
+      stamp=document.getElementById('stamp'), banner=document.getElementById('banner'),
+      note=document.getElementById('note'), nightOverlay=document.getElementById('nightOverlay'),
+      nightLine1=document.getElementById('nightLine1'), nightLine2=document.getElementById('nightLine2');
 
-/* === AJOUT FONCTION MODE NUIT === */
-async function handleNightMode(){
-  const inNight=isNightWindow();
-  if(!inNight){nightOverlay.style.display='none';return;}
-  // Bannière cachée + témoin 🌙
+/* Debug */
+function dbg(parts){note.textContent=parts.filter(Boolean).join(' | ');}
+
+/* ——— fetchLatest (ton code d’origine, inchangé sauf gestion API/nuit) ——— */
+async function fetchLatest(k,forceApi=false){
+  const now=Date.now(), night=isNightWindow(), allowApi=forceApi&&!night;
+  const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
+  const urls=[
+    {u:`${GH_RAW}${path}?x=${Math.floor(now/60000)}`,tag:'RAW'},
+    {u:`${JSDELIVR}${path}?x=${Math.floor(now/60000)}`,tag:'CDN'}
+  ];
+  if(allowApi) urls.push({u:`${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`,tag:'API'});
+  let trace=[],source='-';
+  async function tryJson(u,t){try{const r=await fetch(u,{cache:'no-store'});trace.push(`${t}:${r.status}`);if(!r.ok)return null;source=t;return await r.json();}catch{return null;}}
+  let j=null;for(const {u,tag} of urls){j=await tryJson(u,tag);if(j)break;}
+  if(!j) throw new Error('fetch failed');
+  const it=j?.items?.[k];if(!it?.ts) throw new Error('bad json');
+  const tsMs=Number(it.ts)*1000;let imgUrl=it.url;
+  if(!imgUrl){const f=(it.file||'').split('/').pop();imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
+  return {ts:tsMs,url:imgUrl,src:source,trace:trace.join(' ')};
+}
+
+/* ——— renderFrom (inchangé) ——— */
+function renderFrom(src,status){return new Promise(r=>{const i=new Image();i.onload=()=>{img.src=i.src;setTop(status.status,status.text);r(true)};i.onerror=()=>r(false);i.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
+function setTop(status,label){const n=isNightWindow();if(n){led.textContent='🌙';led.className='';stamp.textContent=`Night • ${new Date().toLocaleTimeString()}`;}else{led.textContent='';led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleTimeString()}`;}}
+
+/* === FONCTION MODE NUIT === */
+async function handleNightMode(k='brel'){
   banner.style.display='none';
   led.textContent='🌙';led.className='';stamp.textContent=`Night • ${new Date().toLocaleTimeString()}`;
-  // Fond night
   await renderFrom(TDID_NIGHT_IMG,{status:'ok',text:'Night'});
-  // Vérifie latest
   let L=null,ageMs=Infinity;
-  try{L=await fetchLatest(depot,false);}catch{}
+  try{L=await fetchLatest(k,false);}catch{}
   if(L){ageMs=Date.now()-L.ts;}
-  // Active overlay si vieux >10min
+  const ageSec=isFinite(ageMs)?Math.round(ageMs/1000):'∞';
+  dbg([`mode: NIGHT`,`Δ=${ageSec}s`,`latest:${L?L.src:'none'}`]);
   if(ageMs>=NIGHT_MIN_AGE){
     nightOverlay.style.display='flex';
     let toggle=false;
@@ -137,15 +157,24 @@ async function handleNightMode(){
   }
 }
 
-/* ——— (Tout le reste de ton code original suit inchangé) ——— */
-/* ... */
-/* Dans ton tick principal, ajoute simplement tout en haut : */
-
+/* === TICK PRINCIPAL === */
 async function tick(){
-  if(isNightWindow()){await handleNightMode();return;}
-  /* ——— le reste de ton tick original ici, inchangé ——— */
+  const k='brel';
+  if(isNightWindow()){await handleNightMode(k);return;}
+  nightOverlay.style.display='none';
+  let L=null;
+  try{L=await fetchLatest(k,true);}catch(e){await renderFrom(ERR_IMG,{status:'err',text:'Erreur'});return;}
+  await renderFrom(L.url,{status:'ok',text:'Live'});
+  const ageSec=Math.round((Date.now()-L.ts)/1000);
+  dbg([`mode: DAY`,`Δ=${ageSec}s`,`src:${L.src}`]);
 }
 
+/* === DÉMARRAGE === */
+(async()=>{
+  try{await fetchLatest('brel',true);}catch{}
+  await tick();
+  setInterval(()=>{tick();},6000);
+})();
 </script>
 </body>
 </html>
