@@ -202,6 +202,11 @@ const img=document.getElementById('view'), note=document.getElementById('note'),
   // Cache l'overlay dès le départ
 nightOverlay.style.display = 'none';
 
+/* Forçage du mode nuit via URL (doit être défini avant tout appel) */
+const params = new URLSearchParams(location.search);
+const forceNight = params.get("night");
+
+
 /* Détection mobile & rotation */
 function isMobile(){return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)|| (matchMedia&&matchMedia("(pointer:coarse)").matches);}
 function isLandscape(){return window.innerWidth>window.innerHeight;}
@@ -450,7 +455,7 @@ async function handleNightOverlay(k){
 
   showBanner(false); // jamais de bandeau la nuit
 
-if (inNight && (ageMs >= NIGHT_MIN_AGE || forceNight === "1")) {
+if ((inNight || forceNight === "1") && (ageMs >= NIGHT_MIN_AGE || forceNight === "1")) {
   // ➤ En pleine nuit OU forçage manuel => affiche overlay
   if (!nightShown) {
     await showNightScreen();
