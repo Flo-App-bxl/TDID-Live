@@ -397,6 +397,12 @@ async function fetchLatest(k,forceApi=false){
 
 /* Affichage Night (TDID_Night ou overlay) */
 async function showNightScreen(){
+
+  if (!isNightWindow()) {
+  if (nightOverlay) nightOverlay.style.display = 'none';
+  return;
+}
+
   // On n'arrête plus totalement la logique SP/miroir, juste l'affichage
   showBanner(false);
 
