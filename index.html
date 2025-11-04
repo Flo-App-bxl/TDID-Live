@@ -449,7 +449,7 @@ async function handleNightOverlay(k){
 
   showBanner(false); // sécurité : jamais de bandeau en mode nuit
 
-  if(ageMs >= NIGHT_MIN_AGE){
+ if(inNight && ageMs >= NIGHT_MIN_AGE){
     if(!nightShown){
       await showNightScreen();
       nightShown=true;
