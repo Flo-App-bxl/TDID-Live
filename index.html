@@ -450,22 +450,22 @@ async function handleNightOverlay(k){
 
   showBanner(false); // jamais de bandeau la nuit
 
-  if (inNight && ageMs >= NIGHT_MIN_AGE) {
-    // ➤ En pleine nuit, données trop vieilles => affiche overlay
-    if (!nightShown) {
-      await showNightScreen();
-      nightShown = true;
-    }
-  } else {
-    // ➤ Hors nuit ou données fraîches => cache overlay
-    if (nightOverlay) nightOverlay.style.display = 'none';
-    nightShown = false;
-    if (nightToggleTimer) {
-      clearInterval(nightToggleTimer);
-      nightToggleTimer = null;
-    }
+if (inNight && (ageMs >= NIGHT_MIN_AGE || forceNight === "1")) {
+  // ➤ En pleine nuit OU forçage manuel => affiche overlay
+  if (!nightShown) {
+    await showNightScreen();
+    nightShown = true;
+  }
+} else {
+  // ➤ Hors nuit ou données fraîches => cache overlay
+  if (nightOverlay) nightOverlay.style.display = 'none';
+  nightShown = false;
+  if (nightToggleTimer) {
+    clearInterval(nightToggleTimer);
+    nightToggleTimer = null;
   }
 }
+
 
 
    
