@@ -280,14 +280,8 @@ function leaveMirror(){
 }
 
 /* Détection fenêtre nuit (heure Bruxelles, 01:00–03:45) + forçage URL */
+// Fenêtre nuit PUREMENT horaire (01:00–03:45 Europe/Brussels)
 function isNightWindow() {
-  // Si forcé via URL
-  if (typeof forceNight !== "undefined") {
-    if (forceNight === "1") return true;  // Forcé ON
-    if (forceNight === "0") return false; // Forcé OFF
-  }
-
-  // Sinon, automatique selon l'heure (Europe/Brussels)
   try {
     const fmt = new Intl.DateTimeFormat('fr-BE', {
       hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Brussels'
@@ -300,11 +294,11 @@ function isNightWindow() {
   } catch {
     const d = new Date();
     const h = d.getHours(), m = d.getMinutes();
-    return (h * 60 + m) >= 60 && (h * 60 + m) < 225;
+    const total = h * 60 + m;
+    return total >= 60 && total < 225;
   }
 }
 
-/* Affichage Night (overlay visuel) */
 
 
 
