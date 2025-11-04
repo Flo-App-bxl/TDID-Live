@@ -427,43 +427,37 @@ async function showNightScreen(){
 
 /* Gestion de l'overlay nuit en fonction de l'âge du latest */
 async function handleNightOverlay(k){
-  const inNight=isNightWindow();
+  const inNight = isNightWindow();
   const L = latest[k];
   const ageMs = L ? (Date.now() - L.ts) : Infinity;
-  const ageSec = Math.round(ageMs/1000);
+  const ageSec = Math.round(ageMs / 1000);
 
-  if(!inNight){
-    // hors mode nuit : on enlève tout
-    if(nightOverlay) nightOverlay.style.display='none';
-    nightShown=false;
-    if(nightToggleTimer){ clearInterval(nightToggleTimer); nightToggleTimer=null; }
-    return;
-  }
-
-  // Debug spécifique nuit (en plus du debug SP/miroir)
+  // Debug spécifique nuit
   dbg([
     note.textContent,
     `NIGHT Δ=${isFinite(ageMs)?ageSec+'s':'∞'}`,
     `nightShown:${nightShown?'ON':'OFF'}`
   ]);
 
-  showBanner(false); // sécurité : jamais de bandeau en mode nuit
+  showBanner(false); // jamais de bandeau la nuit
 
- if (inNight && ageMs >= NIGHT_MIN_AGE) {
-  // ➤ En pleine nuit, données trop vieilles => affiche overlay
-  if (!nightShown) {
-    await showNightScreen();
-    nightShown = true;
-  }
-} else {
-  // ➤ Hors nuit ou données fraîches => cache overlay
-  if (nightOverlay) nightOverlay.style.display = 'none';
-  nightShown = false;
-  if (nightToggleTimer) {
-    clearInterval(nightToggleTimer);
-    nightToggleTimer = null;
+  if (inNight && ageMs >= NIGHT_MIN_AGE) {
+    // ➤ En pleine nuit, données trop vieilles => affiche overlay
+    if (!nightShown) {
+      await showNightScreen();
+      nightShown = true;
+    }
+  } else {
+    // ➤ Hors nuit ou données fraîches => cache overlay
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
+    }
   }
 }
+
 
     // latest assez frais -> on coupe le mode nuit
     if(nightShown){
