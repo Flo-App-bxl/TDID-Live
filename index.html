@@ -305,66 +305,7 @@ function isNightWindow() {
 }
 
 /* Affichage Night (overlay visuel) */
-async function showNightScreen() {
-  showBanner(false);
 
-  // Affiche directement l'overlay
-  if (nightOverlay) {
-    nightOverlay.style.display = 'flex';
-  }
-
-  // Texte et alternance FR/NL
-  if (nightToggleTimer) clearInterval(nightToggleTimer);
-  let toggle = false;
-  nightLine1.textContent = "Made Night 🌙";
-  nightLine2.textContent = "Bonne nuit";
-  nightToggleTimer = setInterval(() => {
-    toggle = !toggle;
-    nightLine1.textContent = "Made Night 🌙";
-    nightLine2.textContent = toggle ? "Bonne nuit" : "Goede nacht";
-  }, 5000);
-
-  // Image d'arrière-plan (si dispo)
-  await renderFrom("https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg", {status: 'ok', text: 'Night'});
-}
-
-/* Gestion de l'overlay nuit en fonction de l'âge du latest */
-async function handleNightOverlay(k) {
-  const inNight = isNightWindow();
-  const L = latest[k];
-  const ageMs = L ? (Date.now() - L.ts) : Infinity;
-  const ageSec = Math.round(ageMs / 1000);
-
-  // Debug
-  dbg([
-    note.textContent,
-    `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
-    `forceNight:${forceNight}`,
-    `nightShown:${nightShown ? 'ON' : 'OFF'}`
-  ]);
-
-  showBanner(false);
-
-  // ➤ Conditions d'affichage overlay
-  const forceOn = (forceNight === "1");
-  const forceOff = (forceNight === "0");
-
-  if ((inNight || forceOn) && !forceOff && (forceOn || ageMs >= NIGHT_MIN_AGE)) {
-    // Nuit réelle ou forçage ON
-    if (!nightShown) {
-      await showNightScreen();
-      nightShown = true;
-    }
-  } else {
-    // Pas en mode nuit / forçage OFF / données fraîches
-    if (nightOverlay) nightOverlay.style.display = 'none';
-    nightShown = false;
-    if (nightToggleTimer) {
-      clearInterval(nightToggleTimer);
-      nightToggleTimer = null;
-    }
-  }
-}
 
 
 
