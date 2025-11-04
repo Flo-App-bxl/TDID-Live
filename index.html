@@ -25,8 +25,7 @@
   .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
   .toggle.active{background:#2a3347}
 
-  .wrap{flex:1; display:flex; align-items:center; justify-content:center;
-    position:relative; height:100svh; overflow:auto;}
+  .wrap{flex:1;display:flex;align-items:center;justify-content:center;position:relative;height:100svh;overflow:auto;}
   .wrap::-webkit-scrollbar{display:none}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
 
@@ -57,12 +56,10 @@
     background:rgba(5,6,10,0.94);
     display:none;
     z-index:15;
-    display:flex;
     flex-direction:column;
     align-items:center;
     justify-content:flex-start;
     padding-top:15vh;
-    padding-inline:4vw;
     color:#eaeef5;
     text-align:center;
   }
@@ -73,9 +70,6 @@
   }
   #nightLine1{font-size:2.7em;font-weight:700;margin:8px 0;}
   #nightLine2{font-size:2.1em;margin:6px 0;}
-
-  .fsbtn{position:fixed;right:12px;top:72px;z-index:26;padding:8px 12px;border-radius:10px;border:1px solid var(--line);
-    background:#141923;color:#fff;font-size:.9em;display:none;cursor:pointer;}
 </style>
 </head>
 
@@ -86,32 +80,17 @@
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
     <div class="status">
-      <button id="forceMirror" class="toggle">Miroir 15 min</button>
       <span id="led" class="dot"></span>
       <span id="stamp">—</span>
     </div>
   </div>
-
-  <button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
 
   <div class="banner" id="banner">
     <span>Refresh &gt; 5 min – vérifier fiabilité via ‘Last Refresh’ • Refresh &gt; 5 min – controleer betrouwbaarheid via ‘Last Refresh’</span>
   </div>
 
   <div class="wrap">
-    <div class="splash" id="splash">
-      <video id="intro" autoplay muted playsinline preload="auto"
-        src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro.mp4"></video>
-      <button class="skip" id="skipIntro">Passer</button>
-    </div>
-
-    <div class="rotate" id="rotateHint">
-      <div class="box">📱 Tournez votre téléphone en mode paysage<br/>📱 Draai uw telefoon naar de liggende stand</div>
-    </div>
-
     <img id="view" alt="TDID Live" />
-
-    <!-- Overlay nuit -->
     <div class="night-overlay" id="nightOverlay">
       <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
       <div id="nightLine1">Made Night 🌙</div>
@@ -121,98 +100,103 @@
   <div class="note" id="note"></div>
 
 <script>
-/* Constantes principales */
+/* ==== CONFIG ==== */
 const GH_USER="Flo-App-bxl", GH_REPO="TDID-Live", GH_BRANCH="main";
 const GH_RAW=`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
 const JSDELIVR=`https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
-const GH_API=`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
 const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
 const NIGHT_MIN_AGE=600000, NIGHT_OFF_AGE=300000;
 
-/* Détection mode nuit (01h00–03h45 Europe/Brussels) */
+/* ==== UTILS ==== */
 function isNightWindow(){
-  try{
-    const fmt=new Intl.DateTimeFormat('fr-BE',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Europe/Brussels'});
-    const p=fmt.formatToParts(new Date());
-    const h=parseInt(p.find(x=>x.type==='hour').value,10);
-    const m=parseInt(p.find(x=>x.type==='minute').value,10);
-    const total=h*60+m;
-    return (total>=60 && total<225);
-  }catch{
-    const d=new Date(), h=d.getHours(), m=d.getMinutes();
-    const total=h*60+m;
-    return (total>=60 && total<225);
-  }
+  const now=new Date();const h=now.getHours(),m=now.getMinutes();const total=h*60+m;
+  return total>=60&&total<225; // 01:00–03:45
 }
 
-/* Refs DOM */
+/* ==== DOM ==== */
 const img=document.getElementById('view'), led=document.getElementById('led'), stamp=document.getElementById('stamp');
 const banner=document.getElementById('banner'), note=document.getElementById('note');
 const nightOverlay=document.getElementById('nightOverlay'), nightLine1=document.getElementById('nightLine1'), nightLine2=document.getElementById('nightLine2');
-let latest={brel:null,delta:null,erasme:null}, lastFetchAt={}, lastHttp={}, lastSource={};
-let nightShown=false, nightToggleTimer=null;
 
-/* Témoin top */
+/* ==== STATE ==== */
+let latest={},lastHttp={},lastSource={},nightShown=false,nightToggleTimer=null;
+
+/* ==== DEPOT SELECTION ==== */
+const btns={brel:document.getElementById('brel'),delta:document.getElementById('delta'),erasme:document.getElementById('erasme')};
+let depot=localStorage.getItem('tdid_depot')||'brel';
+function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===depot);}}
+for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',k);tick();setActive();};}
+setActive();
+
+/* ==== UI ==== */
 function setTop(status,label){
   const night=isNightWindow();
-  if(night){ led.textContent='🌙'; led.className=''; stamp.textContent=`Night • ${new Date().toLocaleString()}`; }
-  else{ led.textContent=''; led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err'); stamp.textContent=`${label} • ${new Date().toLocaleString()}`; }
+  if(night){led.textContent='🌙';led.className='';stamp.textContent=`Night • ${new Date().toLocaleTimeString()}`;}
+  else{led.textContent='';led.className='dot '+(status==='ok'?'ok':status==='warn'?'warn':'err');stamp.textContent=`${label} • ${new Date().toLocaleTimeString()}`;}
 }
-function showBanner(show){ if(isNightWindow()) banner.style.display='none'; else banner.style.display=show?'block':'none'; }
+function showBanner(show){banner.style.display=isNightWindow()?'none':(show?'block':'none');}
 function dbg(parts){note.textContent=parts.filter(Boolean).join(' | ');}
 
-/* Fetch latest sans API en mode nuit */
-async function fetchLatest(k,forceApi=false){
-  const now=Date.now(), night=isNightWindow(), allowApi=forceApi&&!night;
-  const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
-  const urls=[
-    {u:`${GH_RAW}${path}?x=${Math.floor(now/60000)}`,tag:'RAW'},
-    {u:`${JSDELIVR}${path}?x=${Math.floor(now/60000)}`,tag:'CDN'}
-  ];
-  let trace=[],source='-';
-  async function tryJson(u,t){try{const r=await fetch(u,{cache:'no-store'});trace.push(`${t}:${r.status}`);if(!r.ok)return null;source=t;return await r.json();}catch{return null;}}
-  let j=null;
-  for(const {u,tag} of urls){ j=await tryJson(u,tag); if(j) break; }
-  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
+/* ==== FETCH LATEST ==== */
+async function fetchLatest(k){
+  const now=Date.now();const path=k==='brel'?'/time_brel/latest.json':k==='delta'?'/time_delta/latest.json':'/time_erasme/latest.json';
+  const urls=[{u:`${GH_RAW}${path}?x=${Math.floor(now/60000)}`,tag:'RAW'},{u:`${JSDELIVR}${path}?x=${Math.floor(now/60000)}`,tag:'CDN'}];
+  let j=null,trace=[],source='-';
+  for(const {u,tag} of urls){
+    try{const r=await fetch(u,{cache:'no-store'});trace.push(`${tag}:${r.status}`);if(r.ok){source=tag;j=await r.json();break;}}catch{trace.push(`${tag}:fail`);}
+  }
+  lastHttp[k]=trace.join(' ');lastSource[k]=source;
   if(!j) throw new Error('fetch failed');
-  const it=j?.items?.[k]; if(!it?.ts) throw new Error('bad json');
-  const tsMs=Number(it.ts)*1000; let imgUrl=it.url;
-  if(!imgUrl){const f=(it.file||'').split('/').pop();imgUrl=`${GH_RAW}/${MIRROR_DIR[k]}/${f}`;}
-  latest[k]={ts:tsMs,url:imgUrl}; return latest[k];
+  const it=j?.items?.[k];if(!it?.ts) throw new Error('bad json');
+  latest[k]={ts:Number(it.ts)*1000,url:it.url};return latest[k];
 }
 
-/* Render image */
-function renderFrom(src,status){return new Promise(r=>{const i=new Image();i.onload=()=>{img.src=i.src;setTop(status.status,status.text);r(true)};i.onerror=()=>r(false);i.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();});}
+/* ==== RENDER ==== */
+function renderFrom(src,label){
+  return new Promise(r=>{
+    const i=new Image();
+    i.onload=()=>{img.src=i.src;setTop('ok',label);r(true);};
+    i.onerror=()=>r(false);
+    i.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();
+  });
+}
 
-/* Mode nuit : image + overlay */
+/* ==== NIGHT MODE ==== */
 async function handleNight(k){
-  const inNight=isNightWindow();
-  if(!inNight){ if(nightOverlay) nightOverlay.style.display='none'; nightShown=false; if(nightToggleTimer){clearInterval(nightToggleTimer);nightToggleTimer=null;} return; }
+  if(!isNightWindow()){nightOverlay.style.display='none';nightShown=false;if(nightToggleTimer){clearInterval(nightToggleTimer);nightToggleTimer=null;}return;}
   showBanner(false);
-  await renderFrom(TDID_NIGHT_IMG,{status:'ok',text:'Night'});
-  let L=null,ageMs=Infinity; try{L=await fetchLatest(k,false);if(L)ageMs=Date.now()-L.ts;}catch{}
+  await renderFrom(TDID_NIGHT_IMG,'Night');
+  let L=null,ageMs=Infinity;try{L=await fetchLatest(k);if(L)ageMs=Date.now()-L.ts;}catch{}
   const ageSec=isFinite(ageMs)?Math.round(ageMs/1000):null;
-  dbg([`mode: NIGHT`,L?`latest:${lastSource[k]}`:`latest:none`,`trace:${lastHttp[k]}`,`Δ=${ageSec}s`,`overlay:${nightShown?'ON':'OFF'}`]);
-  if(ageMs>=NIGHT_MIN_AGE){ if(!nightShown){nightOverlay.style.display='flex';if(nightToggleTimer)clearInterval(nightToggleTimer);let t=false;nightLine1.textContent="Made Night 🌙";nightLine2.textContent="Bonne nuit";nightToggleTimer=setInterval(()=>{t=!t;nightLine1.textContent="Made Night 🌙";nightLine2.textContent=t?"Bonne nuit":"Goede nacht";},5000);nightShown=true;} }
-  else if(ageMs<NIGHT_OFF_AGE){ if(nightShown){nightOverlay.style.display='none';nightShown=false;if(nightToggleTimer){clearInterval(nightToggleTimer);nightToggleTimer=null;}} }
+  dbg([`mode:NIGHT`,L?`latest:${lastSource[k]}`:`none`,`Δ=${ageSec}s`]);
+  if(ageMs>=NIGHT_MIN_AGE&&!nightShown){
+    nightOverlay.style.display='flex';let t=false;
+    nightLine1.textContent="Made Night 🌙";nightLine2.textContent="Bonne nuit";
+    nightToggleTimer=setInterval(()=>{t=!t;nightLine2.textContent=t?"Bonne nuit":"Goede nacht";},5000);
+    nightShown=true;
+  }else if(ageMs<NIGHT_OFF_AGE&&nightShown){
+    nightOverlay.style.display='none';nightShown=false;if(nightToggleTimer){clearInterval(nightToggleTimer);nightToggleTimer=null;}
+  }
 }
 
-/* Tick */
+/* ==== TICK ==== */
 async function tick(){
-  const k='brel'; // dépôt par défaut
-  const inNight=isNightWindow();
+  const k=depot;const inNight=isNightWindow();
   if(inNight){await handleNight(k);return;}
-  // hors nuit — placeholder (ex: chargement normal)
-  await fetchLatest(k,true).catch(()=>{});
-  await renderFrom(latest[k]?.url||TDID_NIGHT_IMG,{status:'ok',text:'Live'});
-  dbg([`mode: DAY`,`latest:${lastSource[k]}`]);
+  try{
+    const L=await fetchLatest(k);
+    await renderFrom(L.url,'Live');
+    dbg([`mode:DAY`,`latest:${lastSource[k]}`,`trace:${lastHttp[k]}`]);
+  }catch(e){
+    dbg([`mode:DAY`,`latest:fail`,e.message]);
+  }
 }
 
-/* Lancement immédiat */
+/* ==== START ==== */
 (async()=>{
-  try{await fetchLatest('brel',true);}catch(e){console.warn('Initial fetch failed',e);}
+  try{await fetchLatest(depot);}catch(e){console.warn('Initial fetch failed',e);}
   await tick();
   setInterval(()=>{tick();},6000);
 })();
