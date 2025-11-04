@@ -405,74 +405,84 @@ async function fetchLatest(k,forceApi=false){
 }
 
 /* Affichage Night (TDID_Night ou overlay) */
-async function showNightScreen(){
+/* Affichage Night (overlay visuel) */
+async function showNightScreen() {
+  if (!nightOverlay) return;
 
-  if (!isNightWindow()) {
-  if (nightOverlay) nightOverlay.style.display = 'none';
-  return;
-}
-
-  // On n'arrête plus totalement la logique SP/miroir, juste l'affichage
   showBanner(false);
 
-  if(nightOverlay){
-    nightOverlay.style.display='none';
-  }
+  // Affiche l’overlay
+  nightOverlay.style.display = 'flex';
 
-  // On tente d’abord l’image TDID_Night
-  const ok = await renderFrom("https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg",{status:'ok',text:'Night'});
-  if(ok){
-    if(nightOverlay) nightOverlay.style.display='none';
-    return;
-  }
+  // Texte + alternance FR/NL
+  if (nightToggleTimer) clearInterval(nightToggleTimer);
+  let toggle = false;
+  nightLine1.textContent = "Made Night 🌙";
+  nightLine2.textContent = "Bonne nuit";
+  nightToggleTimer = setInterval(() => {
+    toggle = !toggle;
+    nightLine1.textContent = "Made Night 🌙";
+    nightLine2.textContent = toggle ? "Bonne nuit" : "Goede nacht";
+  }, 5000);
 
-  // Fallback overlay texte
-  if(!nightOverlay) return;
-  nightOverlay.style.display='flex';
-  if(nightToggleTimer) clearInterval(nightToggleTimer);
-  let toggle=false;
-  nightLine1.textContent="Made Night 🌙";
-  nightLine2.textContent="Bonne nuit";
-  nightToggleTimer = setInterval(()=>{
-    toggle=!toggle;
-    nightLine1.textContent="Made Night 🌙";
-    nightLine2.textContent=toggle?"Bonne nuit":"Goede nacht";
-  },5000);
+  // Image de fond (optionnel)
+  await renderFrom(
+    "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg",
+    { status: 'ok', text: 'Night' }
+  );
 }
 
 /* Gestion de l'overlay nuit en fonction de l'âge du latest */
-async function handleNightOverlay(k){
-  const inNight = isNightWindow();
+async function handleNightOverlay(k) {
+  const baseNight = isNightWindow();           // vrai "nuit" selon l'heure
+  const forceOn   = (forceNight === "1");      // ?night=1  → forcer l'affichage
+  const forceOff  = (forceNight === "0");      // ?night=0  → forcer OFF
+
+  // Si on force OFF : pas de nuit, point.
+  if (forceOff) {
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
+    }
+    return;
+  }
+
+  // Nuit active : soit on est dans la vraie fenêtre nuit, soit on force ON
+  const inNight = baseNight || forceOn;
+
   const L = latest[k];
   const ageMs = L ? (Date.now() - L.ts) : Infinity;
   const ageSec = Math.round(ageMs / 1000);
 
-  // Debug spécifique nuit
+  // Debug
   dbg([
-    note.textContent,
-    `NIGHT Δ=${isFinite(ageMs)?ageSec+'s':'∞'}`,
-    `nightShown:${nightShown?'ON':'OFF'}`
+    `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
+    `baseNight:${baseNight ? '1' : '0'}`,
+    `forceNight:${forceNight}`,
+    `nightShown:${nightShown ? 'ON' : 'OFF'}`
   ]);
 
-  showBanner(false); // jamais de bandeau la nuit
-if ((inNight || forceNight === "1") && (forceNight === "1" || ageMs >= NIGHT_MIN_AGE)) {
-  // ➤ En pleine nuit OU forçage manuel => affiche overlay
-  if (!nightShown) {
-    await showNightScreen();
-    nightShown = true;
+  // ➤ Règle d’affichage :
+  // - on est en "nuit" (réelle ou forcée)
+  // - ET les données ont plus de NIGHT_MIN_AGE (10 min)
+  if (inNight && ageMs >= NIGHT_MIN_AGE) {
+    if (!nightShown) {
+      await showNightScreen();
+      nightShown = true;
+    }
+  } else {
+    // ➤ Sinon on cache l’overlay
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
+    }
   }
-} else {
-  // ➤ Hors nuit ou données fraîches => cache overlay
-  if (nightOverlay) nightOverlay.style.display = 'none';
-  nightShown = false;
-  if (nightToggleTimer) {
-    clearInterval(nightToggleTimer);
-    nightToggleTimer = null;
-  }
-}
 }
 
-   
 /* Tick principal */
 async function tick(){
   const k=depot;
