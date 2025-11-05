@@ -254,7 +254,7 @@
 
 <body>
   <div class="top" id="topbar">
-    <span class="brand">TDID1</span>
+    <span class="brand">TDID</span>
     <button class="btn" id="brel">Brel</button>
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
@@ -751,9 +751,7 @@ async function handleNightOverlay(k) {
   const ageMs = L ? (Date.now() - L.ts) : Infinity;
   const ageSec = Math.round(ageMs / 1000);
 
-if (isNightActive()) {
-  currentStatusLabel = 'Night';
-}
+
 
   dbg([
     `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
