@@ -92,26 +92,25 @@
   .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
 
 /* ——— Bandeau alerte style indicateur M7 (offline + FR/NL zap) ——— */
+/* ——— Bandeau alerte style indicateur M7 (offline + FR/NL zap) ——— */
 .banner{
   position:fixed;
-  bottom:calc(2vh + env(safe-area-inset-bottom)); /* 🔹 légèrement au-dessus du bord */
+  bottom:calc(2vh + env(safe-area-inset-bottom)); /* légèrement au-dessus du bord */
   left:50%;
-  transform:translateX(-50%);                    /* 🔹 centré horizontalement uniquement */
-  left:50%;
-  background:#000000;                         /* 🔹 fond noir pur */
-  color:#FFB300;                              /* 🔹 texte ambre LED */
-  border:2px solid #202020;                   /* 🔹 contour discret anthracite */
+  transform:translateX(-50%);                     /* centré horizontalement */
+  background:#000000;                             /* fond noir pur */
+  color:#FFB300;                                  /* texte ambre LED */
+  border:2px solid #C0C0C0;                       /* contour “argent” */
   border-radius:10px;
-  font-family:'Consolas','Lucida Console','Courier New',monospace; /* 🔹 police locale type afficheur */
+  font-family:'Consolas','Lucida Console','Courier New',monospace;
   font-weight:700;
-  font-size:2.6em;
+  font-size:2.4em;
   letter-spacing:2px;
   text-transform:uppercase;
   text-align:center;
-  white-space:nowrap;
-  padding:26px 32px;
   width:85vw;
-  white-space:normal;   /* ✅ permet le saut de ligne */
+  max-width:900px;
+  padding:18px 24px;
   line-height:1.2em;
   z-index:20;
   display:none;
@@ -123,12 +122,17 @@
     0 0 6px rgba(255,179,0,0.7),
     0 0 12px rgba(255,179,0,0.4),
     0 0 18px rgba(255,179,0,0.2);
-  animation:powerOn 1.2s ease-out forwards;   /* 🔹 allumage LED progressif */
+  animation:powerOn 1.2s ease-out forwards;
 }
 
-/* Transition du zap – sans moment noir */
+/* Transition du zap – FR/NL superposés */
 .banner span{
-  display:inline-block;
+  position:absolute;
+  inset:0;                            /* occupe tout le bandeau */
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 1.5rem;
   opacity:0;
 }
 
@@ -170,10 +174,11 @@
 
 /* ——— Mode paysage mobile ——— */
 @media (pointer:coarse) and (orientation:landscape){
-  .banner{
-    left:var(--side);
+.banner{
+    left:calc(var(--side) + (100vw - var(--side))/2);    /* centrée dans la zone droite */
     width:calc(100vw - var(--side) - 4vw);
-    transform:translateY(-50%);
+    bottom:calc(2vh + env(safe-area-inset-bottom));      /* toujours en bas */
+    transform:translateX(-50%);
   }
 }
 
