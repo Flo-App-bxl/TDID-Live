@@ -25,18 +25,24 @@
   .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
   .toggle.active{background:#2a3347}
 
-  .wrap{flex:1; display:flex; align-items:center; justify-content:center;
-    position:relative; height:100svh; overflow:auto;}
+  /* Zone principale corrigée pour iOS */
+  .wrap{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    position:relative; height:100svh; overflow:auto;
+  }
   .wrap::-webkit-scrollbar{display:none}
   img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
 
   .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
 
-  .banner{position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);
-    background:rgba(242,182,54,0.75);color:#000;
-    padding:26px 32px;border-radius:18px;font-weight:700;font-size:1.5em;
+  .banner{
+    position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);
+    background:rgba(242,182,54,0.85);color:#000;
+    padding:26px 32px;border-radius:18px;font-weight:700;
+    font-size:1.9em;              /* police agrandie */
     z-index:20;display:none;overflow:hidden;white-space:nowrap;width:85vw;text-align:center;
-    box-shadow:0 4px 16px rgba(0,0,0,0.3);}
+    box-shadow:0 4px 16px rgba(0,0,0,0.3);
+  }
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
 
@@ -47,32 +53,67 @@
   .rotate{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#0f1115cf;z-index:25}
   .rotate .box{padding:16px 20px;border:1px solid var(--line);border-radius:12px;background:#161a24;text-align:center}
 
-  /* Night mode overlay */
+  /* Overlay mode nuit : recouvre la zone image (wrap) mais pas la topbar */
   .night-overlay{
-    position:fixed;
+    position:absolute;
     inset:0;
-    background:rgba(5,6,10,0.92);
+    background:rgba(5,6,10,0.94);
     display:none;
+    z-index:15; /* au-dessus de l'image, en-dessous du bandeau (20) et splash (30) */
     flex-direction:column;
     align-items:center;
-    justify-content:flex-start;
-    padding-top:12vh;
-    z-index:35;
+    justify-content:center;
+    padding:5vh 4vw;
     color:#eaeef5;
     text-align:center;
   }
   .night-logo{
-    width:160px;
-    max-width:50vw;
-    margin-bottom:16px;
+    width:220px;
+    max-width:60vw;
+    margin-bottom:20px;
   }
-  .night-line{
-    font-size:1.6em;
+  #nightLine1{
+    font-size:2.7em;
+    font-weight:700;
+    margin:8px 0;
+  }
+  #nightLine2{
+    font-size:2.1em;
     margin:6px 0;
   }
 
   .fsbtn{position:fixed;right:12px;top:72px;z-index:26;padding:8px 12px;border-radius:10px;border:1px solid var(--line);
     background:#141923;color:#fff;font-size:.9em;display:none;cursor:pointer;}
+
+  @media (pointer:coarse){
+    .top{height:52px;padding:8px}
+    .btn{padding:6px 10px}
+    .banner{font-size:1.6em}
+    .wrap{align-items:stretch}
+    img{height:100vh;max-height:100vh}
+    .fsbtn{top:12px}
+  }
+
+  /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
+  @media (pointer:coarse) and (orientation:landscape){
+    :root{--side:64px;}
+    body{flex-direction:row}
+    .top{
+      position:fixed;left:0;top:0;bottom:0;height:100svh;width:var(--side);
+      border-bottom:none;border-right:1px solid var(--line);
+      flex-direction:column;align-items:center;gap:8px;
+      padding:8px 6px;background:#12151bf2;
+    }
+    .brand{writing-mode:vertical-rl;transform:rotate(180deg);margin:0}
+    .btn{padding:6px 4px;border-radius:10px;width:100%;font-size:.92em;}
+    .status{margin-left:0;flex-direction:column;gap:6px}
+    .stamp{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.72em}
+    .wrap{margin-left:var(--side);height:100svh;overflow:auto;}
+    .wrap::-webkit-scrollbar{display:none}
+    img{width:calc(100vw - var(--side));max-width:none;height:auto;object-fit:contain;display:block;margin:0 auto;}
+    .note{left:calc(50% + var(--side)/2)}
+    .fsbtn{top:12px;right:12px}
+  }
 </style>
 </head>
 
@@ -104,85 +145,455 @@
 
     <div class="rotate" id="rotateHint">
       <div class="box">
-        📱 Tournez votre téléphone en mode paysage<br/>📱 Draai uw telefoon naar de liggende stand
+        📱 Tournez votre téléphone en mode paysage<br/>
+        📱 Draai uw telefoon naar de liggende stand
       </div>
     </div>
 
-    <!-- Night overlay -->
-    <div class="night-overlay" id="nightOverlay">
-      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg" class="night-logo" alt="TDID logo">
-      <div class="night-line" id="nightLine1">Mode Night 🌙</div>
-      <div class="night-line" id="nightLine2">Bonne nuit</div>
-    </div>
-
     <img id="view" alt="TDID Live" />
+
+    <!-- Overlay Night mode qui recouvre la zone image -->
+    <div class="night-overlay" id="nightOverlay">
+      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg"
+           class="night-logo" alt="TDID logo">
+      <div id="nightLine1">Made Night 🌙</div>
+      <div id="nightLine2">Bonne nuit</div>
+    </div>
   </div>
   <div class="note" id="note"></div>
 
 <script>
+/* ====== Constantes ====== */
 const GH_USER="Flo-App-bxl", GH_REPO="TDID-Live", GH_BRANCH="main";
-const GH_RAW=`https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
+const GH_RAW = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
+const GH_API = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
+const JSDELIVR = `https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
+const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme"};
 const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
+
+/* Image mode nuit + seuils */
 const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
-const NIGHT_MIN_AGE=600*1000;
+const NIGHT_MIN_AGE = 600 * 1000;        // 10 min : on affiche Made Night
+const NIGHT_OFF_AGE = 5 * 60 * 1000;     // 5 min : si plus frais, on coupe Made Night
 
-/* Night window detection (Brussels local time) */
-function isNightWindow(){
-  try{
-    const fmt=new Intl.DateTimeFormat('fr-BE',{hour:'2-digit',hour12:false,timeZone:'Europe/Brussels'});
-    const h=+fmt.format(new Date());
-    return h>=1 && h<4;
-  }catch{return false;}
+/* périodicités et seuils */
+const REFRESH_MS=6000, FETCH_MIN=60000, MIRROR_FORCE_MS=60000;
+const BANNER_GT5=5*60000, MIRROR_ERR_10=10*60000, CACHE_MIRROR_TTL=60000;
+const SP_FORCE_API_GT = 280 * 1000; // en mode SP, si âge miroir > 280s → force API (hors nuit)
+
+  /* Forçage du mode nuit via URL (doit être défini avant tout appel) */
+const params = new URLSearchParams(location.search);
+const forceNight = (params.get("night") || "auto").trim();
+  
+/* SharePoint (PNG) */
+const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
+const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+const spRaw=f=>`${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER+"/"+f)}&t=${Date.now()}`;
+const DATA_SP={brel:{img:spRaw("live_brel.png")},delta:{img:spRaw("live_delta.png")},erasme:{img:spRaw("live_erasme.png")}};
+
+/* UI refs */
+const img=document.getElementById('view'), note=document.getElementById('note'),
+      led=document.getElementById('led'), stamp=document.getElementById('stamp'),
+      banner=document.getElementById('banner'),
+      intro=document.getElementById('intro'), splash=document.getElementById('splash'),
+      skip=document.getElementById('skipIntro'), fsBtn=document.getElementById('fsbtn'),
+      forceBtn=document.getElementById('forceMirror'), rotateHint=document.getElementById('rotateHint'),
+      nightOverlay=document.getElementById('nightOverlay'),
+      nightLine1=document.getElementById('nightLine1'),
+      nightLine2=document.getElementById('nightLine2');
+
+
+
+/* Détection mobile & rotation */
+function isMobile(){return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)|| (matchMedia&&matchMedia("(pointer:coarse)").matches);}
+function isLandscape(){return window.innerWidth>window.innerHeight;}
+function updateRotateHint(){ if(!isMobile()){rotateHint.style.display='none';return;} rotateHint.style.display=isLandscape()?'none':'flex'; }
+addEventListener('resize', updateRotateHint);
+addEventListener('orientationchange', updateRotateHint);
+updateRotateHint();
+
+/* Fullscreen mobile (via bouton) */
+function canFS(){return !!document.documentElement.requestFullscreen;}
+async function enterFS(){try{await document.documentElement.requestFullscreen();return true;}catch{return false;}}
+function markInteracted(){ if(isMobile() && canFS()){ fsBtn.style.display='inline-block'; } }
+document.addEventListener('click',markInteracted);
+document.addEventListener('touchstart',markInteracted);
+fsBtn.addEventListener('click', async()=>{ const ok=await enterFS(); if(ok){ fsBtn.style.display='none'; }});
+
+/* Sélection dépôt */
+const btns={brel:document.getElementById('brel'),delta:document.getElementById('delta'),erasme:document.getElementById('erasme')};
+let depot=localStorage.getItem('tdid_depot')||'brel';
+function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===depot);}}
+for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',k);forceFetch=true;preferSPNext=true;setActive();tick();};}
+setActive();
+
+/* Splash vidéo */
+skip.onclick=()=>splash.style.display='none'; setTimeout(()=>splash.style.display='none',8000);
+
+/* États */
+let latest={brel:null,delta:null,erasme:null};
+let lastFetchAt={brel:0,delta:0,erasme:0};
+let lastHttp={brel:'',delta:'',erasme:''};
+let lastSource={brel:'',delta:'',erasme:''};
+let lastMirror={brel:null,delta:null,erasme:null}; // {url,time}
+let forceFetch=true; let bannerLatch={brel:false,delta:false,erasme:false};
+let isMirror=false, mirrorTimer=null; let preferSPNext=false;
+
+/* État mode nuit */
+let nightShown=false;
+let nightToggleTimer=null;
+
+
+/* Override miroir 15 min */
+const OV_KEY='tdid_mirror_override_until';
+function overrideActive(){const t=+localStorage.getItem(OV_KEY)||0;return Date.now()<t;}
+function setOverride(min){localStorage.setItem(OV_KEY,String(Date.now()+min*60000));updateBtn(true);forceFetch=true;enterMirror(true);tick();}
+function clearOverride(){localStorage.removeItem(OV_KEY);updateBtn(false);leaveMirror();preferSPNext=true;forceFetch=true;tick();}
+function updateBtn(activeNow){
+  const on=activeNow??overrideActive();
+  forceBtn.classList.toggle('active',on);
+  forceBtn.textContent=on?"Miroir (forcé) ⏱ – Stop":"Miroir 15 min";
+  const show=(!isMirror)||on;
+  forceBtn.style.display=show?'inline-block':'none';
 }
+forceBtn.addEventListener('click',()=>{overrideActive()?clearOverride():setOverride(15);});
 
-/* Check if TDID_Night.png exists */
-async function nightImageExists(){
-  try{
-    const r=await fetch(TDID_NIGHT_IMG,{method:'HEAD',cache:'no-store'});
-    return r.ok;
-  }catch{return false;}
-}
-
-/* Display night overlay */
-function showNightOverlay(){
-  const overlay=document.getElementById('nightOverlay');
-  const l1=document.getElementById('nightLine1');
-  const l2=document.getElementById('nightLine2');
-  overlay.style.display='flex';
-  let toggle=false;
-  setInterval(()=>{
-    toggle=!toggle;
-    l1.textContent="Mode Night 🌙";
-    l2.textContent=toggle?"Bonne nuit":"Goede nacht";
-  },5000);
-}
-
-/* Main tick logic */
-async function tick(){
-  const img=document.getElementById('view');
-  const night=isNightWindow();
-
-  if(night){
-    // On ne fait rien d’autre la nuit
-    if(!window._nightShown){
-      const ageExceeded=true; // tu peux lier à ton cache si besoin
-      if(ageExceeded){
-        const hasNightImg=await nightImageExists();
-        if(hasNightImg){
-          img.src=TDID_NIGHT_IMG;
-        }else{
-          showNightOverlay();
-        }
-        window._nightShown=true;
+/* Mode miroir */
+function enterMirror(startupKick=true){
+  if(!isMirror){
+    isMirror=true; updateBtn();
+    const inNight = isNightActive();
+    if(startupKick) fetchLatest(depot,!inNight).catch(()=>{});
+    if(mirrorTimer) clearInterval(mirrorTimer);
+    mirrorTimer=setInterval(()=>{
+      if(isMirror){
+        const n=isNightWindow();
+        fetchLatest(depot,!n).catch(()=>{});
       }
+    }, MIRROR_FORCE_MS);
+  }
+}
+function leaveMirror(){
+  isMirror=false; updateBtn();
+  if(mirrorTimer){ clearInterval(mirrorTimer); mirrorTimer=null; }
+}
+
+/* Détection fenêtre nuit (heure Bruxelles, 01:00–03:45) + forçage URL */
+// Fenêtre nuit PUREMENT horaire (01:00–03:45 Europe/Brussels)
+function isNightWindow() {
+  try {
+    const fmt = new Intl.DateTimeFormat('fr-BE', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Brussels'
+    });
+    const parts = fmt.formatToParts(new Date());
+    const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
+    const total = h * 60 + m;
+    return (total >= 60 && total < 225); // 01:00 à 03:45
+  } catch {
+    const d = new Date();
+    const h = d.getHours(), m = d.getMinutes();
+    const total = h * 60 + m;
+    return total >= 60 && total < 225;
+  }
+}
+
+function isNightActive() {
+  // night=0 → jamais nuit
+  if (forceNight === "0") return false;
+  // night=1 → toujours nuit (pour les éléments visuels)
+  if (forceNight === "1") return true;
+  // sinon, nuit réelle basée sur l'heure Bruxelles
+  return isNightWindow();
+}
+
+/* Helpers */
+function setTop(status,label){
+  if (isNightActive()) {
+    led.textContent = '🌙';
+    led.className = '';
+    stamp.textContent = `Night • ${new Date().toLocaleString()}`;
+  } else {
+    led.textContent = ''; // optionnel, pour virer la lune si on repasse en jour
+    led.className = 'dot ' + (status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'err');
+    stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
+  }
+}
+
+
+function renderFrom(src,statusLabel){
+  return new Promise(res=>{
+    const t=new Image();
+    t.onload=()=>{
+      img.src=t.src;
+      setTop(statusLabel.status,statusLabel.text);
+      res(true);
+    };
+    t.onerror=()=>res(false);
+    t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();
+  });
+}
+function dbg(parts){note.textContent=parts.filter(Boolean).join(' | ');}
+
+/* SP loader (fetch → blob; fallback <img>) */
+async function loadSpImage(k){
+  const u=DATA_SP[k].img; let via='fetch';
+  try{
+    const r=await fetch(u,{cache:'no-store',credentials:'include',mode:'cors'});
+    if(r.ok){const b=await r.blob(); return {ok:true,url:URL.createObjectURL(b),via};}
+  }catch{}
+  via='img';
+  const okImg = await new Promise(res=>{const im=new Image();im.onload=()=>res(true);im.onerror=()=>res(false);im.src=u;});
+  if(okImg) return {ok:true,url:u,via};
+  return {ok:false,reason:'Load failed'};
+}
+
+/* latest.json (RAW→CDN→API) + anti-régression
+   En mode nuit : pas d'appel API (forceApi ignoré + pas de fallback API) */
+async function fetchLatest(k,forceApi=false){
+  const now=Date.now();
+  const night=isNightWindow();
+  const allowApi = forceApi && !night; // jamais d'API la nuit
+
+  if((!forceApi || night) && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latest[k]) return latest[k];
+
+  const path = k==='brel'?'/time_brel/latest.json' : k==='delta'?'/time_delta/latest.json' : '/time_erasme/latest.json';
+  const urls = [
+    {u:`${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'RAW'},
+    {u:`${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'CDN'},
+    {u:`${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`, tag: allowApi ? 'API*' : 'API'}
+  ];
+  let trace=[], source='-';
+  async function tryJson(u,tag,init){
+    try{
+      const r=await fetch(u,{cache:'no-store',...init}); trace.push(`${tag}:${r.status}`);
+      if(!r.ok) return null; source=tag; return await r.json();
+    }catch{ trace.push(`${tag}:fail`); return null; }
+  }
+
+  let j=null;
+  if(allowApi){
+    // force via API d'abord (jour uniquement)
+    j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+    if(!j) j = await tryJson(urls[0].u, urls[0].tag);
+    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
+  }else{
+    // RAW → CDN, puis éventuellement API si pas nuit
+    j = await tryJson(urls[0].u, urls[0].tag);
+    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
+    if(!j && !night){
+      j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+    }
+  }
+
+  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
+  if(!j) throw new Error('fetch failed');
+
+  const it=j?.items?.[k];
+  if(!it?.ts) throw new Error('bad json');
+
+  const tsMs = Number(it.ts) * 1000;
+  let imgUrl = it.url;
+  if(!imgUrl){
+    const f=(it.file||'').split('/').pop();
+    if(!f) throw new Error('no file');
+    imgUrl = `${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
+  }
+
+  const prev = latest[k];
+  if(prev && tsMs < prev.ts){
+    return prev;
+  }
+
+  latest[k] = { ts: tsMs, url: imgUrl };
+  forceFetch=false;
+  return latest[k];
+}
+function showBanner(show){
+  banner.style.display = show ? 'block' : 'none';
+}
+
+/* Affichage Night (TDID_Night ou overlay) */
+/* Affichage Night (overlay visuel) */
+async function showNightScreen() {
+  if (!nightOverlay) return;
+  showBanner(false);
+
+  // Affiche l’overlay
+  nightOverlay.style.display = 'flex';
+
+  // Texte + alternance FR/NL
+  if (nightToggleTimer) clearInterval(nightToggleTimer);
+  let toggle = false;
+  nightLine1.textContent = "Made Night 🌙";
+  nightLine2.textContent = "Bonne nuit";
+  nightToggleTimer = setInterval(() => {
+    toggle = !toggle;
+    nightLine1.textContent = "Made Night 🌙";
+    nightLine2.textContent = toggle ? "Bonne nuit" : "Goede nacht";
+  }, 5000);
+
+  // Image de fond (optionnel)
+  await renderFrom(
+    "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg",
+    { status: 'ok', text: 'Night' }
+  );
+}
+
+/* Gestion de l'overlay nuit en fonction de l'âge du latest */
+async function handleNightOverlay(k) {
+  const baseNight = isNightWindow();      // vraie nuit horaire
+  const forceOn   = (forceNight === "1"); // ?night=1 → simulation nuit
+  const forceOff  = (forceNight === "0"); // ?night=0 → forcé jour
+
+  const L = latest[k];
+  const ageMs = L ? (Date.now() - L.ts) : Infinity;
+  const ageSec = Math.round(ageMs / 1000);
+
+  dbg([
+    `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
+    `baseNight:${baseNight ? '1' : '0'}`,
+    `forceNight:${forceNight}`,
+    `nightShown:${nightShown ? 'ON' : 'OFF'}`
+  ]);
+
+  // 👉 1) Forçage OFF → jamais d'overlay
+  if (forceOff) {
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
     }
     return;
   }
 
-  // ton code normal ici (hors créneau nuit)
+  // 👉 2) Cas "nuit forcée" OU "nuit réelle"
+  const inNight = forceOn || baseNight;
+
+  // 👉 3) Overlay seulement si nuit (réelle ou simulée) ET age ≥ 10 min
+  if (inNight && ageMs >= NIGHT_MIN_AGE) {
+    if (!nightShown) {
+      await showNightScreen();
+      nightShown = true;
+    }
+  } else {
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
+    }
+  }
 }
 
-setInterval(tick,6000);
+
+/* Tick principal */
+async function tick(){
+  const k=depot;
+  const inNight = isNightActive();
+
+  const override = overrideActive();
+  const preferSPThisTick = preferSPNext; preferSPNext=false;
+
+  // ——— SP prioritaire si pas d'override ———
+  if(!override){
+    const sp = await loadSpImage(k);
+    if(sp.ok){
+      leaveMirror(); updateBtn(false);
+      await renderFrom(sp.url,{status:'ok',text:'SP'});
+
+      try{
+        // Dernier latest + bannière >5min
+        let L = await fetchLatest(k,false);
+        let ageMs = Date.now() - L.ts;
+        let forced = false;
+
+        // En mode SP : si Δ miroir > 280s → force un appel API one-shot (hors nuit)
+        if(ageMs > SP_FORCE_API_GT && !inNight){
+          const L2 = await fetchLatest(k,true);
+          if(L2){ L=L2; ageMs = Date.now()-L.ts; forced = true; }
+        }
+
+        const ageSec = Math.round(ageMs/1000);
+        bannerLatch[k] = (!inNight && ageMs > BANNER_GT5) ? true : false;
+        showBanner(bannerLatch[k]);
+
+        dbg([
+          `mode: SP`,
+          `SP: OK(${sp.via})`,
+          `latest: ${lastSource[k]}`,
+          `trace: ${lastHttp[k]}`,
+          `fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,
+          `Δ=${ageSec}s${forced?' (API@SP)':''}`,
+          `bandeau: ${bannerLatch[k]?'ON>5m':'OFF'}`,
+          `source: SP`
+        ]);
+      }catch(e){
+        showBanner(false);
+        dbg([`mode: SP`, `SP: OK(${sp.via})`, `latest: KO`, `trace: ${lastHttp[k]||e.message}`, `source: SP`]);
+      }
+
+      await handleNightOverlay(k);
+      return;
+    }else if(preferSPThisTick){
+      dbg([`mode: SP?`, `SP: KO(${sp.reason||'?'})`, `hint: retry SP next tick`]);
+    }
+  }
+
+  // ——— Mode Miroir (ou override) ———
+  enterMirror(true); updateBtn();
+
+  let L=null;
+  try{
+    const forceApi = !isNightWindow();
+    L = await fetchLatest(k,forceApi);
+  }
+  catch(e){
+    const cached=lastMirror[k];
+    if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+      await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
+      dbg([`mode: Miroir`, `API/latest: KO`, `affiche: cache ≤60s`]);
+      await handleNightOverlay(k);
+      return;
+    }
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); showBanner(false);
+    dbg([`mode: Miroir`, `API/latest: KO`, `affiche: erreur`]);
+    await handleNightOverlay(k);
+    return;
+  }
+
+  const ageMs=Date.now()-L.ts, ageSec=Math.round(ageMs/1000);
+  if(ageMs>MIRROR_ERR_10){
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'}); showBanner(false);
+    dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: erreur`]);
+    await handleNightOverlay(k);
+    return;
+  }
+
+  const okMir=await renderFrom(L.url,{status:'warn',text:'Miroir'});
+  if(okMir){
+    lastMirror[k]={url:L.url,time:Date.now()};
+    showBanner(false);
+    dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: miroir`]);
+    await handleNightOverlay(k);
+    return;
+  }
+
+  const cached=lastMirror[k];
+  if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
+    await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
+    dbg([`mode: Miroir`, `miroir: KO`, `affiche: cache ≤60s`]);
+  } else {
+    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'}); showBanner(false);
+    dbg([`mode: Miroir`, `miroir: KO`, `affiche: erreur`]);
+  }
+
+  await handleNightOverlay(k);
+}
+
+/* Start */
+setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
 tick();
 </script>
 </body>
