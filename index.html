@@ -24,6 +24,32 @@
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
   .status{display:flex;align-items:center;gap:8px;margin-left:auto}
   .dot{width:10px;height:10px;border-radius:50%}
+  /* LED emoji */
+#led{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:1.1em;
+  min-width:1.2em;
+}
+
+/* Clignotement (SP) */
+.led-blink{
+  animation:ledBlink .8s linear infinite;
+}
+@keyframes ledBlink{
+  0%,40%,100%{opacity:1;}
+  50%,90%{opacity:.2;}
+}
+
+/* Pivote 45° (Miroir, Miroir cache, Erreur KO>60s) */
+.led-tilt{
+  animation:ledTilt .8s ease-in-out infinite;
+}
+@keyframes ledTilt{
+  0%,100%{transform:rotate(0deg);}
+  50%{transform:rotate(45deg);}
+}
   .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
   .stamp{opacity:.9;font-size:.9em;}
   #stamp{display:inline-block;text-align:right;white-space:normal;line-height:1.1em;}
@@ -397,17 +423,110 @@ function isNightActive() {
   return isNightWindow();
 }
 
+let ledTimer = null;
+
+function setLed(mode){
+  // reset
+  if (ledTimer){ clearInterval(ledTimer); ledTimer = null; }
+  led.className = '';              // enlève dot / old classes
+  led.style.opacity = 1;
+  led.style.transform = '';
+
+  switch(mode){
+    case 'sp': // SP : 🟢 clignotant
+      led.textContent = '🟢';
+      led.classList.add('led-blink');
+      break;
+
+    case 'miroir': // Miroir : 🔷 qui pivote
+      led.textContent = '🔷';
+      led.classList.add('led-tilt');
+      break;
+
+    case 'miroir-cache': // Miroir cache (≤60s) : 🔷 qui pivote
+      led.textContent = '🔷';
+      led.classList.add('led-tilt');
+      break;
+
+    case 'err-10': { // Erreur (miroir >10min) : ⭕️❌ en alternance
+      const frames = ['⭕️','❌'];
+      let i = 0;
+      led.textContent = frames[i];
+      ledTimer = setInterval(()=>{
+        i = 1 - i;
+        led.textContent = frames[i];
+      }, 800); // même rythme que SP
+      break;
+    }
+
+    case 'err-60': // Erreur (miroir KO >60s) : 🔶 qui pivote
+      led.textContent = '🔶';
+      led.classList.add('led-tilt');
+      break;
+
+    case 'err-api': { // Erreur API/latest KO : 🛑🆘 en alternance
+      const frames = ['🛑','🆘'];
+      let i = 0;
+      led.textContent = frames[i];
+      ledTimer = setInterval(()=>{
+        i = 1 - i;
+        led.textContent = frames[i];
+      }, 800);
+      break;
+    }
+
+    case 'night': { // Night : 🌙✨ en alternance
+      const frames = ['🌙','✨'];
+      let i = 0;
+      led.textContent = frames[i];
+      ledTimer = setInterval(()=>{
+        i = 1 - i;
+        led.textContent = frames[i];
+      }, 800);
+      break;
+    }
+
+    default:
+      led.textContent = '';
+  }
+}
+
 /* Helpers */
 function setTop(status,label){
+  const nowStr = new Date().toLocaleString();
+
   if (isNightActive()) {
-    led.textContent = '🌙';
-    led.className = '';
-    stamp.textContent = `Night • ${new Date().toLocaleString()}`;
-  } else {
-    led.textContent = ''; 
-    led.className = 'dot ' + (status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'err');
-    stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
+    // 🌙✨ en alternance
+    setLed('night');
+    stamp.textContent = `Night • ${nowStr}`;
+    return;
   }
+
+  // 🟢 / 🔷 / 🔶 / ⭕️❌ / 🛑🆘 selon le label
+  if (label === 'SP'){
+    setLed('sp');
+  }
+  else if (label === 'Miroir'){
+    setLed('miroir');
+  }
+  else if (label.startsWith('Miroir cache')){
+    setLed('miroir-cache');
+  }
+  else if (label.startsWith('Erreur (miroir >10min)')){
+    setLed('err-10');
+  }
+  else if (label.startsWith('Erreur (miroir KO >60s)')){
+    setLed('err-60');
+  }
+  else if (label.startsWith('Erreur')){
+    setLed('err-api');
+  }
+  else{
+    // fallback : pas de LED
+    setLed(null);
+  }
+
+  stamp.textContent = `${label} • ${nowStr}`;
 }
 
 
