@@ -24,6 +24,12 @@
   .btn.active{background:var(--accent);color:#fff;border-color:transparent}
   .status{display:flex;align-items:center;gap:8px;margin-left:auto}
   .dot{width:10px;height:10px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+  .stamp{opacity:.9;font-size:.9em;}
+  #stamp{display:inline-block;text-align:right;white-space:pre-line;line-height:1.1em;}
+  .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
+  .toggle.active{background:#2a3347}
+  
   /* LED emoji */
 #led{
   display:inline-flex;
@@ -70,11 +76,8 @@
  /* 0%,100%{transform:rotate(0deg);}
 /*  50%{transform:rotate(45deg);}
 /*}
-  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
-  .stamp{opacity:.9;font-size:.9em;}
-  #stamp{display:inline-block;text-align:right;white-space:normal;line-height:1.1em;}
-  .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
-  .toggle.active{background:#2a3347}
+
+
 
   /* Zone principale corrigée pour iOS */
   .wrap{
@@ -556,17 +559,21 @@ function showLedTooltip(text) {
 }
 
 /* Helpers */
+/* Helpers */
 function setTop(status,label){
-  const nowStr = new Date().toLocaleString();
+  const now = new Date();
+  const dateStr = now.toLocaleDateString();
+  const timeStr = now.toLocaleTimeString();
 
   if (isNightActive()) {
     // 🌙✨ en alternance
     setLed('night');
-    stamp.textContent = `Night • ${nowStr}`;
+    // stamp : uniquement date + heure, sur 2 lignes
+    stamp.textContent = `${dateStr}\n${timeStr}`;
     return;
   }
 
-  // 🟢 / 🔷 / 🔶 / ⭕️❌ / 🛑🆘 selon le label
+  // 🟢 / 🔷 / 🔶 / ⭕️❌ / 🛑🆘 selon le label (LED + tooltip)
   if (label === 'SP'){
     setLed('sp');
   }
@@ -590,7 +597,8 @@ function setTop(status,label){
     setLed(null);
   }
 
-  stamp.textContent = `${label} • ${nowStr}`;
+  // stamp : uniquement date + heure, sur 2 lignes
+  stamp.textContent = `${dateStr}\n${timeStr}`;
 }
 
 
