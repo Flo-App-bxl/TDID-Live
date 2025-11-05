@@ -123,6 +123,16 @@
     0 0 12px rgba(255,179,0,0.4),
     0 0 18px rgba(255,179,0,0.2);
   animation:powerOn 1.2s ease-out forwards;
+/* Empêche iOS de modifier la taille de police selon la longueur du texte */
+.banner,
+.banner span{
+  -webkit-text-size-adjust:none;
+  text-size-adjust:none;
+}
+
+.banner span{
+  font-size:1em;
+}
 }
 
 /* Transition du zap – FR/NL superposés */
