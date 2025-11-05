@@ -121,7 +121,7 @@
 
     /* 👉 pour éviter la zone caméra iPhone */
     padding-top:calc(8px + env(safe-area-inset-top));
-    padding-bottom: calc(2vh + env(safe-area-inset-bottom));
+    padding-bottom: calc(4vh + env(safe-area-inset-bottom));
   }
 
   .brand{
@@ -179,17 +179,21 @@
     left:calc(50% + var(--side)/2);
   }
   
-  .banner{
-    left:calc(var(--side) + (100vw - var(--side))/2); /* 👉 centrée sur la zone visible */
-    width:calc(100vw - var(--side) - 4vw);           /* 👉 s'arrête avant le bord droit */
-  }
-}
+ 
 
   .fsbtn{
     top:12px;
     right:12px;
   }
+  
+   .banner{
+    left:calc(var(--side) + (100vw - var(--side))/2); /* 👉 centrée sur la zone visible */
+    width:calc(100vw - var(--side) - 4vw);           /* 👉 s'arrête avant le bord droit */
+  }
 }
+}
+
+
 </style>
 </head>
 
