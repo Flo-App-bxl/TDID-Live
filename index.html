@@ -424,6 +424,7 @@ function isNightActive() {
 }
 
 let ledTimer = null;
+let ledAngle = 0; // 0° ou 45°
 
 function setLed(mode){
   // reset
@@ -438,14 +439,22 @@ function setLed(mode){
       led.classList.add('led-blink');
       break;
 
-    case 'miroir': // Miroir : 🔷 qui pivote
+        case 'miroir': // Miroir : 🔷 qui pivote sec
       led.textContent = '🟩';
-      led.classList.add('led-tilt');
+      ledAngle = (ledAngle === 0 ? 45 : 0);
+      led.style.transform = `rotate(${ledAngle}deg)`;
       break;
 
-    case 'miroir-cache': // Miroir cache (≤60s) : 🔷 qui pivote
+    case 'miroir-cache': // Miroir cache (≤60s) : 🔷 qui pivote sec
       led.textContent = '🔷';
-      led.classList.add('led-tilt');
+      ledAngle = (ledAngle === 0 ? 45 : 0);
+      led.style.transform = `rotate(${ledAngle}deg)`;
+      break;
+
+    case 'err-60': // Erreur (miroir KO >60s) : 🔶 qui pivote sec
+      led.textContent = '🔶';
+      ledAngle = (ledAngle === 0 ? 45 : 0);
+      led.style.transform = `rotate(${ledAngle}deg)`;
       break;
 
     case 'err-10': { // Erreur (miroir >10min) : ⭕️❌ en alternance
@@ -459,10 +468,6 @@ function setLed(mode){
       break;
     }
 
-    case 'err-60': // Erreur (miroir KO >60s) : 🔶 qui pivote
-      led.textContent = '🔶';
-      led.classList.add('led-tilt');
-      break;
 
     case 'err-api': { // Erreur API/latest KO : 🛑🆘 en alternance
       const frames = ['🛑','🆘'];
