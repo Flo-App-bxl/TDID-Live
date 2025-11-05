@@ -254,7 +254,7 @@
 
 <body>
   <div class="top" id="topbar">
-    <span class="brand">TDID</span>
+    <span class="brand">TDID2</span>
     <button class="btn" id="brel">Brel</button>
     <button class="btn" id="delta">Delta</button>
     <button class="btn" id="erasme">Erasm.</button>
@@ -575,8 +575,7 @@ function setTop(status,label){
 
   if (isNightActive()) {
     // 🌙✨ en alternance
-    setLed('night');
-    currentStatusLabel = 'Night';           // 🔹 utilisé dans le debug
+    setLed('night');           // 🔹 utilisé dans le debug
     // stamp : uniquement date + heure, sur 2 lignes
     stamp.textContent = `${dateStr}\n${timeStr}`;
     return;
