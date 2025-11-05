@@ -488,9 +488,13 @@ async function fetchLatest(k,forceApi=false){
   return latest[k];
 }
 function showBanner(show){
+  // Si on force via l’URL, toujours ON
+  if (forceBanner) {
+    banner.style.display = 'block';
+    return;
+  }
   banner.style.display = show ? 'block' : 'none';
 }
-
 /* Affichage Night (TDID_Night ou overlay) */
 /* Affichage Night (overlay visuel) */
 async function showNightScreen() {
