@@ -255,6 +255,14 @@ const SP_FORCE_API_GT = 280 * 1000; // en mode SP, si âge miroir > 280s → for
 const params = new URLSearchParams(location.search);
 const forceNight = (params.get("night") || "auto").trim();
   
+  /* Forçage du bandeau via URL */
+const forceBanner = params.get("banner") === "1";
+if (forceBanner) {
+  window.addEventListener('DOMContentLoaded', () => {
+    showBanner(true);
+  });
+}
+  
 /* SharePoint (PNG) */
 const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
 const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
