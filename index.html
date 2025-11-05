@@ -91,33 +91,75 @@
 
   .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
 
-/* ——— Bandeau alerte ——— */
+/* ——— Bandeau alerte style indicateur M7 (offline + FR/NL zap) ——— */
 .banner{
   position:fixed;
   top:75%;
   left:50%;
   transform:translate(-50%,-50%);
-  background:rgba(0,0,0,0.8);                 /* 🔹 noir opaque 80% */
-  color:#fff;                                 /* 🔹 texte blanc pur */
-  border:1.5px solid #c0c0c0;                 /* 🔹 contour argenté */
-  border-radius:18px;
+  background:#000000;                         /* 🔹 fond noir pur */
+  color:#FFB300;                              /* 🔹 texte ambre LED */
+  border:2px solid #202020;                   /* 🔹 contour discret anthracite */
+  border-radius:10px;
+  font-family:'Consolas','Lucida Console','Courier New',monospace; /* 🔹 police locale type afficheur */
   font-weight:700;
-  font-size:2.5em;
+  font-size:2.6em;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  text-align:center;
+  white-space:nowrap;
+  padding:26px 32px;
+  width:85vw;
   z-index:20;
   display:none;
   overflow:hidden;
-  white-space:nowrap;
-  width:85vw;
-  text-align:center;
-  padding:26px 32px;
   box-shadow:
-    inset 0 0 4px rgba(255,255,255,0.15),     /* reflet interne doux */
-    0 0 8px rgba(192,192,192,0.35);           /* halo externe argenté */
+    inset 0 0 6px rgba(255,179,0,0.15),
+    0 0 14px rgba(255,179,0,0.25);
+  text-shadow:
+    0 0 6px rgba(255,179,0,0.7),
+    0 0 12px rgba(255,179,0,0.4),
+    0 0 18px rgba(255,179,0,0.2);
+  animation:powerOn 1.2s ease-out forwards;   /* 🔹 allumage LED progressif */
 }
+
+/* Transition du zap */
 .banner span{
   display:inline-block;
-  padding-left:100%;
-  animation:scrollText 15s linear infinite;
+  opacity:0;
+  animation:zapText 6s infinite;
+}
+
+/* Zap visuel FR/NL alterné */
+.banner span:nth-child(1){animation-delay:0s;}
+.banner span:nth-child(2){animation-delay:4s;}
+
+@keyframes zapText{
+  0%,49%{opacity:0;}
+  50%,99%{opacity:1;}
+  100%{opacity:0;}
+}
+
+/* Allumage progressif LED */
+@keyframes powerOn{
+  0%{opacity:0;color:#332100;text-shadow:none;}
+  50%{opacity:1;color:#FF9A00;text-shadow:0 0 4px rgba(255,179,0,0.5);}
+  100%{
+    color:#FFB300;
+    text-shadow:
+      0 0 6px rgba(255,179,0,0.7),
+      0 0 12px rgba(255,179,0,0.4),
+      0 0 18px rgba(255,179,0,0.2);
+  }
+}
+
+/* ——— Mode paysage mobile ——— */
+@media (pointer:coarse) and (orientation:landscape){
+  .banner{
+    left:var(--side);
+    width:calc(100vw - var(--side) - 4vw);
+    transform:translateY(-50%);
+  }
 }
 @keyframes scrollText{
   0%{transform:translateX(0);}
@@ -295,9 +337,10 @@
 
   <button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
 
-  <div class="banner" id="banner">
-    <span>Refresh &gt; 5 min – vérifier fiabilité via ‘Last Refresh’ • Refresh &gt; 5 min – controleer betrouwbaarheid via ‘Last Refresh’</span>
-  </div>
+<div class="banner" id="banner">
+  <span>REFRESH &gt; 5 MIN – VÉRIFIER FIABILITÉ VIA ‘LAST REFRESH’</span>
+  <span>REFRESH &gt; 5 MIN – CONTROLEER BETROUWBAARHEID VIA ‘LAST REFRESH’</span>
+</div>
 
   <div class="wrap">
     <div class="splash" id="splash">
