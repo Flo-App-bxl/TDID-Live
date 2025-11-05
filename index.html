@@ -623,7 +623,11 @@ function renderFrom(src,statusLabel){
     t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();
   });
 }
-function dbg(parts){note.textContent=parts.filter(Boolean).join(' | ');}
+function dbg(parts){
+  const base = parts.filter(Boolean).join(' | ');
+  const prefix = currentStatusLabel ? `[${currentStatusLabel}] ` : '';
+  note.textContent = prefix + base;
+}
 
 /* SP loader (fetch → blob; fallback <img>) */
 async function loadSpImage(k){
@@ -744,6 +748,10 @@ async function handleNightOverlay(k) {
   const ageMs = L ? (Date.now() - L.ts) : Infinity;
   const ageSec = Math.round(ageMs / 1000);
 
+if (isNightActive()) {
+  currentStatusLabel = 'Night';
+}
+
   dbg([
     `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
     `baseNight:${baseNight ? '1' : '0'}`,
@@ -810,28 +818,39 @@ async function tick(){
         }
 
         const ageSec = Math.round(ageMs/1000);
+        const apiAgeSec = Math.round((Date.now() - lastFetchAt[k]) / 1000);
+
         bannerLatch[k] = (!inNight && ageMs > BANNER_GT5) ? true : false;
         showBanner(bannerLatch[k]);
 
-        dbg([
-          `mode: SP`,
-          `SP: OK(${sp.via})`,
-          `latest: ${lastSource[k]}`,
-          `trace: ${lastHttp[k]}`,
-          `fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,
-          `Δ=${ageSec}s${forced?' (API@SP)':''}`,
-          `bandeau: ${bannerLatch[k]?'ON>5m':'OFF'}`,
-          `source: SP`
-        ]);
+dbg([
+  `SP: OK(${sp.via})`,
+  `latest: ${lastSource[k]}`,
+  `trace: ${lastHttp[k]}`,
+  `Δ=${ageSec}s${forced ? ' (API@SP)' : ''}`,
+  `APIΔ=${apiAgeSec}s`,
+  `bandeau: ${bannerLatch[k] ? 'ON>5m' : 'OFF'}`,
+  `source: SP`
+]);
+
+
       }catch(e){
         showBanner(false);
-        dbg([`mode: SP`, `SP: OK(${sp.via})`, `latest: KO`, `trace: ${lastHttp[k]||e.message}`, `source: SP`]);
+        dbg([
+  `SP: OK(${sp.via})`,
+  `latest: KO`,
+  `trace: ${lastHttp[k] || e.message}`,
+  `source: SP`
+]);
       }
 
       await handleNightOverlay(k);
       return;
     }else if(preferSPThisTick){
-      dbg([`mode: SP?`, `SP: KO(${sp.reason||'?'})`, `hint: retry SP next tick`]);
+   dbg([
+  `SP: KO(${sp.reason || '?'})`,
+  `hint: retry SP next tick`
+]);
     }
   }
 
@@ -847,20 +866,34 @@ async function tick(){
     const cached=lastMirror[k];
     if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
       await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
-      dbg([`mode: Miroir`, `API/latest: KO`, `affiche: cache ≤60s`]);
+      dbg([
+  `API/latest: KO`,
+  `affiche: cache ≤60s`
+]);
       await handleNightOverlay(k);
       return;
     }
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur'}); showBanner(false);
-    dbg([`mode: Miroir`, `API/latest: KO`, `affiche: erreur`]);
+    dbg([
+  `API/latest: KO`,
+  `affiche: erreur`
+]);
     await handleNightOverlay(k);
     return;
   }
 
   const ageMs=Date.now()-L.ts, ageSec=Math.round(ageMs/1000);
+  const apiAgeSec = Math.round((Date.now() - lastFetchAt[k]) / 1000);
   if(ageMs>MIRROR_ERR_10){
-    await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'}); showBanner(false);
-    dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: erreur`]);
+await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir >10min)'}); 
+showBanner(false);
+dbg([
+  `latest: ${lastSource[k]}`,
+  `trace: ${lastHttp[k]}`,
+  `Δ=${ageSec}s`,
+  `APIΔ=${apiAgeSec}s`,
+  `affiche: erreur`
+]);
     await handleNightOverlay(k);
     return;
   }
@@ -869,18 +902,30 @@ async function tick(){
   if(okMir){
     lastMirror[k]={url:L.url,time:Date.now()};
     showBanner(false);
-    dbg([`mode: Miroir`,`latest: ${lastSource[k]}`,`trace: ${lastHttp[k]}`,`fetch: ${new Date(lastFetchAt[k]).toLocaleTimeString()}`,`Δ=${ageSec}s`,`affiche: miroir`]);
-    await handleNightOverlay(k);
+    dbg([
+  `latest: ${lastSource[k]}`,
+  `trace: ${lastHttp[k]}`,
+  `Δ=${ageSec}s`,
+  `APIΔ=${apiAgeSec}s`,
+  `affiche: miroir`
+]);
+   await handleNightOverlay(k);
     return;
   }
 
   const cached=lastMirror[k];
   if(cached && (Date.now()-cached.time)<=CACHE_MIRROR_TTL){
     await renderFrom(cached.url,{status:'warn',text:'Miroir cache (≤60s)'}); showBanner(false);
-    dbg([`mode: Miroir`, `miroir: KO`, `affiche: cache ≤60s`]);
+    dbg([
+  `miroir: KO`,
+  `affiche: cache ≤60s`
+]);
   } else {
     await renderFrom(ERR_IMG,{status:'err',text:'Erreur (miroir KO >60s)'}); showBanner(false);
-    dbg([`mode: Miroir`, `miroir: KO`, `affiche: erreur`]);
+    dbg([
+  `miroir: KO`,
+  `affiche: erreur`
+]);
   }
 
   await handleNightOverlay(k);
