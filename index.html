@@ -72,12 +72,12 @@
 }
 /* Pivote 45° (Miroir, Miroir cache, Erreur KO>60s) */
  /*.led-tilt{
- /* animation:ledTilt .8s ease-in-out infinite;
-/*}
-/*@keyframes ledTilt{
- /* 0%,100%{transform:rotate(0deg);}
-/*  50%{transform:rotate(45deg);}
-/*}
+  animation:ledTilt .8s ease-in-out infinite;
+}
+@keyframes ledTilt{
+  0%,100%{transform:rotate(0deg);}
+  50%{transform:rotate(45deg);}
+}*/
 
 
 
@@ -232,7 +232,10 @@
     left:calc(50% + var(--side)/2);
   }
   
- 
+ #led .led-tooltip{
+  top:auto;
+  bottom:130%;
+}
 
   .fsbtn{
     top:12px;
