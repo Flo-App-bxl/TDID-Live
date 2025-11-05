@@ -37,6 +37,7 @@
   justify-content:center;
   font-size:1.1em;
   min-width:1.2em;
+  position:relative;   /* 👉 pour positionner la bulle par rapport à la LED */
 }
 
 /* Clignotement (SP) */
@@ -57,9 +58,10 @@
   border-radius: 8px;
   font-size: 0.8em;
   white-space: nowrap;
-  top: -42px;
   left: 50%;
   transform: translateX(-50%);
+  top: 130%;             /* 👉 SOUS la LED */
+  bottom: auto;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
