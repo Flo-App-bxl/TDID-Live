@@ -98,26 +98,84 @@
     .fsbtn{top:12px}
   }
 
-  /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
-  @media (pointer:coarse) and (orientation:landscape){
-    :root{--side:75px;}
-    body{flex-direction:row}
-    .top{
-      position:fixed;left:0;top:0;bottom:0;height:100svh;width:var(--side);
-      border-bottom:none;border-right:1px solid var(--line);
-      flex-direction:column;align-items:center;gap:8px;
-      padding:8px 6px;background:#12151bf2;
-    }
-    .brand{transform:rotate(0deg);transform-origin:center;margin:0;white-space:nowrap;
-    .btn{padding:6px 4px;border-radius:10px;width:100%;font-size:.92em;}
-    .status{margin-left:0;flex-direction:column;gap:6px}
-    .stamp{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.72em}
-    .wrap{margin-left:var(--side);height:100svh;overflow:auto;}
-    .wrap::-webkit-scrollbar{display:none}
-    img{width:calc(100vw - var(--side));max-width:none;height:auto;object-fit:contain;display:block;margin:0 auto;}
-    .note{left:calc(50% + var(--side)/2)}
-    .fsbtn{top:12px;right:12px}
+  /* ——— Mobile + paysage : sidebar affinée + scroll /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
+@media (pointer:coarse) and (orientation:landscape){
+  :root{--side:75px;}
+  body{flex-direction:row}
+  
+  .top{
+    position:fixed;
+    left:0;
+    top:0;
+    bottom:0;
+    height:100svh;
+    width:var(--side);
+    border-bottom:none;
+    border-right:1px solid var(--line);
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    padding:8px 6px;
+    background:#12151bf2;
   }
+
+  .brand{
+    transform:rotate(0deg);
+    transform-origin:center;
+    margin:0;
+    white-space:nowrap;
+  } /* 👈 cette accolade manquait */
+
+  .btn{
+    padding:6px 4px;
+    border-radius:10px;
+    width:100%;
+    font-size:.92em;
+  }
+
+  .status{
+    margin-left:0;
+    display:flex;
+    flex-direction:column;   /* 👉 empile Miroir, LED, texte */
+    align-items:center;
+    gap:6px;
+  }
+
+  #led{
+    display:block;           /* 👉 LED seule sur sa ligne */
+  }
+
+  .stamp{
+    writing-mode:vertical-rl;
+    transform:rotate(180deg);
+    font-size:.72em;
+  }
+
+  .wrap{
+    margin-left:var(--side);
+    height:100svh;
+    overflow:auto;
+  }
+  .wrap::-webkit-scrollbar{display:none}
+
+  img{
+    width:calc(100vw - var(--side));
+    max-width:none;
+    height:auto;
+    object-fit:contain;
+    display:block;
+    margin:0 auto;
+  }
+
+  .note{
+    left:calc(50% + var(--side)/2);
+  }
+
+  .fsbtn{
+    top:12px;
+    right:12px;
+  }
+}
 </style>
 </head>
 
@@ -313,20 +371,14 @@ function isNightActive() {
 
 /* Helpers */
 function setTop(status,label){
-  const isLandscapeMobile = isMobile() && isLandscape();
-
   if (isNightActive()) {
     led.textContent = '🌙';
     led.className = '';
-    stamp.innerHTML = isLandscapeMobile
-      ? `Night<br>${new Date().toLocaleString()}`
-      : `Night • ${new Date().toLocaleString()}`;
+    stamp.textContent = `Night • ${new Date().toLocaleString()}`;
   } else {
-    led.textContent = '';
+    led.textContent = ''; 
     led.className = 'dot ' + (status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'err');
-    stamp.innerHTML = isLandscapeMobile
-      ? `${label}<br>${new Date().toLocaleString()}`
-      : `${label} • ${new Date().toLocaleString()}`;
+    stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
   }
 }
 
