@@ -91,14 +91,39 @@
 
   .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
 
-  .banner{
-    position:fixed;top:75%;left:50%;transform:translate(-50%,-50%);
-    background:rgba(242,182,54,0.85);color:#000;
-    padding:26px 32px;border-radius:18px;font-weight:700;
-    font-size:2.5em;              /* police agrandie */
-    z-index:20;display:none;overflow:hidden;white-space:nowrap;width:85vw;text-align:center;
-    box-shadow:0 4px 16px rgba(0,0,0,0.3);
-  }
+/* ——— Bandeau alerte ——— */
+.banner{
+  position:fixed;
+  top:75%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.8);                 /* 🔹 noir opaque 80% */
+  color:#fff;                                 /* 🔹 texte blanc pur */
+  border:1.5px solid #c0c0c0;                 /* 🔹 contour argenté */
+  border-radius:18px;
+  font-weight:700;
+  font-size:2.5em;
+  z-index:20;
+  display:none;
+  overflow:hidden;
+  white-space:nowrap;
+  width:85vw;
+  text-align:center;
+  padding:26px 32px;
+  box-shadow:
+    inset 0 0 4px rgba(255,255,255,0.15),     /* reflet interne doux */
+    0 0 8px rgba(192,192,192,0.35);           /* halo externe argenté */
+}
+.banner span{
+  display:inline-block;
+  padding-left:100%;
+  animation:scrollText 15s linear infinite;
+}
+@keyframes scrollText{
+  0%{transform:translateX(0);}
+  100%{transform:translateX(-100%);}
+}
+
   .banner span{display:inline-block;padding-left:100%;animation:scrollText 15s linear infinite;}
   @keyframes scrollText{0%{transform:translateX(0);}100%{transform:translateX(-100%);}}
 
@@ -242,9 +267,12 @@
     right:12px;
   }
   
-   .banner{
-    left:calc(var(--side) + (100vw - var(--side))/2); /* 👉 centrée sur la zone visible */
-    width:calc(100vw - var(--side) - 4vw);           /* 👉 s'arrête avant le bord droit */
+    .banner{
+    /* 👉 collé à la droite de la sidebar */
+    left:var(--side);
+    width:calc(100vw - var(--side) - 4vw);
+    /* on ne centre plus qu'en vertical */
+    transform:translateY(-50%);           /* 👉 s'arrête avant le bord droit */
   }
 }
 
