@@ -94,9 +94,10 @@
 /* ——— Bandeau alerte style indicateur M7 (offline + FR/NL zap) ——— */
 .banner{
   position:fixed;
-  top:75%;
+  bottom:calc(2vh + env(safe-area-inset-bottom)); /* 🔹 légèrement au-dessus du bord */
   left:50%;
-  transform:translate(-50%,-50%);
+  transform:translateX(-50%);                    /* 🔹 centré horizontalement uniquement */
+  left:50%;
   background:#000000;                         /* 🔹 fond noir pur */
   color:#FFB300;                              /* 🔹 texte ambre LED */
   border:2px solid #202020;                   /* 🔹 contour discret anthracite */
