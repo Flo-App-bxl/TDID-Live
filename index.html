@@ -451,6 +451,8 @@ function isNightActive() {
 
 let ledTimer = null;
 let ledAngle = 0; // 0° ou 45°
+let currentStatusLabel = '';
+
 
 function setLed(mode){
   // reset
@@ -563,7 +565,6 @@ function showLedTooltip(text) {
 }
 
 /* Helpers */
-/* Helpers */
 function setTop(status,label){
   const now = new Date();
   const dateStr = now.toLocaleDateString();
@@ -572,6 +573,7 @@ function setTop(status,label){
   if (isNightActive()) {
     // 🌙✨ en alternance
     setLed('night');
+    currentStatusLabel = 'Night';           // 🔹 utilisé dans le debug
     // stamp : uniquement date + heure, sur 2 lignes
     stamp.textContent = `${dateStr}\n${timeStr}`;
     return;
@@ -600,6 +602,9 @@ function setTop(status,label){
     // fallback : pas de LED
     setLed(null);
   }
+
+  // 🔹 mémorise le statut pour le debug
+  currentStatusLabel = label || '';
 
   // stamp : uniquement date + heure, sur 2 lignes
   stamp.textContent = `${dateStr}\n${timeStr}`;
