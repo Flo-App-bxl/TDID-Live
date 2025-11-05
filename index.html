@@ -122,7 +122,7 @@
 
     /* 👉 pour éviter la zone caméra iPhone */
     padding-top:calc(8px + env(safe-area-inset-top));
-    padding-bottom: calc(10vh + env(safe-area-inset-bottom));
+    padding-bottom: calc(4vh + env(safe-area-inset-bottom));
   }
 
   .brand{
@@ -139,10 +139,11 @@
     font-size:.92em;
   }
 
-  /* 👉 Le bloc d’état passe en bas de la barre */
+  /* 👉 pousse le bloc d’état en bas, mais en le remontant du bord */
   .status{
     margin-left:0;
-    margin-top:auto;        /* ⬅️ pousse le bloc d’état tout en bas */
+    margin-top:auto;                                      /* le met en bas */
+    margin-bottom:calc(16px + env(safe-area-inset-bottom)); /* le remonte du coin arrondi */
     display:flex;
     flex-direction:column;
     align-items:center;
