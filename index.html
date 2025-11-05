@@ -751,13 +751,15 @@ async function handleNightOverlay(k) {
   const ageSec = Math.round(ageMs / 1000);
 
 
-
+if (isNightActive()) {
   dbg([
     `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
     `baseNight:${baseNight ? '1' : '0'}`,
     `forceNight:${forceNight}`,
     `nightShown:${nightShown ? 'ON' : 'OFF'}`
   ]);
+}
+
 
   // 👉 1) Forçage OFF → jamais d'overlay
   if (forceOff) {
