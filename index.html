@@ -313,14 +313,20 @@ function isNightActive() {
 
 /* Helpers */
 function setTop(status,label){
+  const isLandscapeMobile = isMobile() && isLandscape();
+
   if (isNightActive()) {
     led.textContent = '🌙';
     led.className = '';
-    stamp.textContent = `Night • ${new Date().toLocaleString()}`;
+    stamp.innerHTML = isLandscapeMobile
+      ? `Night<br>${new Date().toLocaleString()}`
+      : `Night • ${new Date().toLocaleString()}`;
   } else {
-    led.textContent = ''; // optionnel, pour virer la lune si on repasse en jour
+    led.textContent = '';
     led.className = 'dot ' + (status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'err');
-    stamp.textContent = `${label} • ${new Date().toLocaleString()}`;
+    stamp.innerHTML = isLandscapeMobile
+      ? `${label}<br>${new Date().toLocaleString()}`
+      : `${label} • ${new Date().toLocaleString()}`;
   }
 }
 
