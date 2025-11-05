@@ -42,6 +42,26 @@
   50%,90%{opacity:.2;}
 }
 
+/* Infobulle LED */
+.led-tooltip {
+  position: absolute;
+  background: rgba(20, 25, 35, 0.95);
+  color: #eaeef5;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.8em;
+  white-space: nowrap;
+  top: -42px;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 50;
+}
+.led-tooltip.show {
+  opacity: 1;
+}
 /* Pivote 45° (Miroir, Miroir cache, Erreur KO>60s) */
  /*.led-tilt{
  /* animation:ledTilt .8s ease-in-out infinite;
@@ -436,23 +456,27 @@ function setLed(mode){
   switch(mode){
     case 'sp': // SP : 🟢 clignotant
       led.textContent = '🟢';
+      led.dataset.label = "SP";
       led.classList.add('led-blink');
       break;
 
         case 'miroir': // Miroir : 🔷 qui pivote sec
       led.textContent = '🟩';
+      led.dataset.label = "Miroir";
       ledAngle = (ledAngle === 0 ? 45 : 0);
       led.style.transform = `rotate(${ledAngle}deg)`;
       break;
 
     case 'miroir-cache': // Miroir cache (≤60s) : 🔷 qui pivote sec
       led.textContent = '🔷';
+      led.dataset.label = "Miroir-cache";
       ledAngle = (ledAngle === 0 ? 45 : 0);
       led.style.transform = `rotate(${ledAngle}deg)`;
       break;
 
     case 'err-60': // Erreur (miroir KO >60s) : 🔶 qui pivote sec
       led.textContent = '🔶';
+      led.dataset.label = "Erreur: miroir KO >60s";
       ledAngle = (ledAngle === 0 ? 45 : 0);
       led.style.transform = `rotate(${ledAngle}deg)`;
       break;
@@ -461,6 +485,7 @@ function setLed(mode){
       const frames = ['⭕️','❌'];
       let i = 0;
       led.textContent = frames[i];
+      led.dataset.label = "Erreur: Miroir >10min";
       ledTimer = setInterval(()=>{
         i = 1 - i;
         led.textContent = frames[i];
@@ -473,6 +498,7 @@ function setLed(mode){
       const frames = ['🛑','🆘'];
       let i = 0;
       led.textContent = frames[i];
+      led.dataset.label = "Erreur API/latest KO";
       ledTimer = setInterval(()=>{
         i = 1 - i;
         led.textContent = frames[i];
@@ -484,6 +510,7 @@ function setLed(mode){
       const frames = ['🌙','✨'];
       let i = 0;
       led.textContent = frames[i];
+      led.dataset.label = "Made Night";
       ledTimer = setInterval(()=>{
         i = 1 - i;
         led.textContent = frames[i];
@@ -494,6 +521,38 @@ function setLed(mode){
     default:
       led.textContent = '';
   }
+}
+
+led.addEventListener('click', () => {
+  const txt = led.dataset.label || '—';
+  showLedTooltip(txt);
+});
+
+/* ===== Info-bulle LED ===== */
+let ledTooltip = null;
+let ledTooltipTimer = null;
+
+// Création de la bulle une seule fois
+function ensureLedTooltip() {
+  if (!ledTooltip) {
+    ledTooltip = document.createElement('div');
+    ledTooltip.className = 'led-tooltip';
+    led.appendChild(ledTooltip);
+  }
+}
+
+// Affiche la bulle pendant 3s
+function showLedTooltip(text) {
+  ensureLedTooltip();
+  ledTooltip.textContent = text;
+
+  // (réinitialise si déjà affichée)
+  if (ledTooltipTimer) clearTimeout(ledTooltipTimer);
+  ledTooltip.classList.add('show');
+
+  ledTooltipTimer = setTimeout(() => {
+    ledTooltip.classList.remove('show');
+  }, 3000);
 }
 
 /* Helpers */
