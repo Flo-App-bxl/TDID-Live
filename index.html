@@ -341,7 +341,9 @@ const img=document.getElementById('view'), note=document.getElementById('note'),
       nightLine1=document.getElementById('nightLine1'),
       nightLine2=document.getElementById('nightLine2');
 
-
+// span interne pour l'emoji de la LED
+const ledIcon = document.createElement('span');
+led.appendChild(ledIcon);
 
 /* Détection mobile & rotation */
 function isMobile(){return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)|| (matchMedia&&matchMedia("(pointer:coarse)").matches);}
@@ -455,30 +457,31 @@ function setLed(mode){
   led.className = '';              // enlève dot / old classes
   led.style.opacity = 1;
   led.style.transform = '';
+  ledIcon.textContent = '';        // on vide uniquement l'emoji, pas les enfants (tooltip)
 
   switch(mode){
     case 'sp': // SP : 🟢 clignotant
-      led.textContent = '🟢';
+      ledIcon.textContent = '🟢';
       led.dataset.label = "SP";
       led.classList.add('led-blink');
       break;
 
-        case 'miroir': // Miroir : 🔷 qui pivote sec
-      led.textContent = '🟩';
+    case 'miroir': // Miroir : 🔷 qui pivote sec
+      ledIcon.textContent = '🟩';
       led.dataset.label = "Miroir";
       ledAngle = (ledAngle === 0 ? 45 : 0);
       led.style.transform = `rotate(${ledAngle}deg)`;
       break;
 
     case 'miroir-cache': // Miroir cache (≤60s) : 🔷 qui pivote sec
-      led.textContent = '🔷';
+      ledIcon.textContent = '🔷';
       led.dataset.label = "Miroir-cache";
       ledAngle = (ledAngle === 0 ? 45 : 0);
       led.style.transform = `rotate(${ledAngle}deg)`;
       break;
 
     case 'err-60': // Erreur (miroir KO >60s) : 🔶 qui pivote sec
-      led.textContent = '🔶';
+      ledIcon.textContent = '🔶';
       led.dataset.label = "Erreur: miroir KO >60s";
       ledAngle = (ledAngle === 0 ? 45 : 0);
       led.style.transform = `rotate(${ledAngle}deg)`;
@@ -487,24 +490,23 @@ function setLed(mode){
     case 'err-10': { // Erreur (miroir >10min) : ⭕️❌ en alternance
       const frames = ['⭕️','❌'];
       let i = 0;
-      led.textContent = frames[i];
+      ledIcon.textContent = frames[i];
       led.dataset.label = "Erreur: Miroir >10min";
       ledTimer = setInterval(()=>{
         i = 1 - i;
-        led.textContent = frames[i];
-      }, 800); // même rythme que SP
+        ledIcon.textContent = frames[i];
+      }, 800);
       break;
     }
-
 
     case 'err-api': { // Erreur API/latest KO : 🛑🆘 en alternance
       const frames = ['🛑','🆘'];
       let i = 0;
-      led.textContent = frames[i];
+      ledIcon.textContent = frames[i];
       led.dataset.label = "Erreur API/latest KO";
       ledTimer = setInterval(()=>{
         i = 1 - i;
-        led.textContent = frames[i];
+        ledIcon.textContent = frames[i];
       }, 800);
       break;
     }
@@ -512,17 +514,18 @@ function setLed(mode){
     case 'night': { // Night : 🌙✨ en alternance
       const frames = ['🌙','✨'];
       let i = 0;
-      led.textContent = frames[i];
+      ledIcon.textContent = frames[i];
       led.dataset.label = "Made Night";
       ledTimer = setInterval(()=>{
         i = 1 - i;
-        led.textContent = frames[i];
+        ledIcon.textContent = frames[i];
       }, 800);
       break;
     }
 
     default:
-      led.textContent = '';
+      ledIcon.textContent = '';
+      led.dataset.label = '';
   }
 }
 
