@@ -99,10 +99,11 @@
   }
 
   /* ——— Mobile + paysage : sidebar affinée + scroll /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
+/* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
 @media (pointer:coarse) and (orientation:landscape){
   :root{--side:75px;}
   body{flex-direction:row}
-  
+
   .top{
     position:fixed;
     left:0;
@@ -117,6 +118,10 @@
     gap:8px;
     padding:8px 6px;
     background:#12151bf2;
+
+    /* 👉 pour éviter la zone caméra iPhone */
+    padding-top:calc(8px + env(safe-area-inset-top));
+    padding-bottom:calc(8px + env(safe-area-inset-bottom));
   }
 
   .brand{
@@ -124,7 +129,7 @@
     transform-origin:center;
     margin:0;
     white-space:nowrap;
-  } /* 👈 cette accolade manquait */
+  }
 
   .btn{
     padding:6px 4px;
@@ -133,16 +138,18 @@
     font-size:.92em;
   }
 
+  /* 👉 Le bloc d’état passe en bas de la barre */
   .status{
     margin-left:0;
+    margin-top:auto;        /* ⬅️ pousse le bloc d’état tout en bas */
     display:flex;
-    flex-direction:column;   /* 👉 empile Miroir, LED, texte */
+    flex-direction:column;
     align-items:center;
     gap:6px;
   }
 
   #led{
-    display:block;           /* 👉 LED seule sur sa ligne */
+    display:block;          /* LED sur sa propre ligne */
   }
 
   .stamp{
