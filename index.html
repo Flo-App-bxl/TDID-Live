@@ -108,7 +108,7 @@
   letter-spacing:2px;
   text-transform:uppercase;
   text-align:center;
-  width:75vw;
+  width:90vw;
   max-width:900px;
   padding:30px 16px;
   line-height:1.2em;
@@ -376,7 +376,7 @@
     <div class="night-overlay" id="nightOverlay">
       <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg"
            class="night-logo" alt="TDID logo">
-      <div id="nightLine1">Made Night 🌙</div>
+      <div id="nightLine1">Mode Night 🌙</div>
       <div id="nightLine2">Bonne nuit</div>
     </div>
   </div>
@@ -393,8 +393,8 @@ const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
 
 /* Image mode nuit + seuils */
 const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
-const NIGHT_MIN_AGE = 600 * 1000;        // 10 min : on affiche Made Night
-const NIGHT_OFF_AGE = 5 * 60 * 1000;     // 5 min : si plus frais, on coupe Made Night
+const NIGHT_MIN_AGE = 600 * 1000;        // 10 min : on affiche Mode Night
+const NIGHT_OFF_AGE = 5 * 60 * 1000;     // 5 min : si plus frais, on coupe Mode Night
 
 /* périodicités et seuils */
 const REFRESH_MS=6000, FETCH_MIN=60000, MIRROR_FORCE_MS=60000;
@@ -606,7 +606,7 @@ function setLed(mode){
       const frames = ['🌙','✨'];
       let i = 0;
       ledIcon.textContent = frames[i];
-      led.dataset.label = "Made Night";
+      led.dataset.label = "Mode Night";
       ledTimer = setInterval(()=>{
         i = 1 - i;
         ledIcon.textContent = frames[i];
@@ -810,11 +810,11 @@ async function showNightScreen() {
   // Texte + alternance FR/NL
   if (nightToggleTimer) clearInterval(nightToggleTimer);
   let toggle = false;
-  nightLine1.textContent = "Made Night 🌙";
+  nightLine1.textContent = "Mode Night 🌙";
   nightLine2.textContent = "Bonne nuit";
   nightToggleTimer = setInterval(() => {
     toggle = !toggle;
-    nightLine1.textContent = "Made Night 🌙";
+    nightLine1.textContent = "Mode Night 🌙";
     nightLine2.textContent = toggle ? "Bonne nuit" : "Goede nacht";
   }, 5000);
 
