@@ -237,9 +237,19 @@
     max-width: 1300px;
     width: 85vw;
     font-size: 3em;      /* texte un peu plus gros = plus haut aussi */
-    padding: 10px 20px;    /* plus de padding haut/bas => plus de hauteur */
+    padding: 20px 20px;    /* plus de padding haut/bas => plus de hauteur */
     /* optionnel si tu veux être sûr qu’elle ne soit jamais trop basse : */
     min-height: 140px;
+  }
+    .night-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;              /* supprime le padding vertical qui pousse vers le bas */
+  }
+
+  .night-logo {
+    margin-bottom: 24px;     /* petit espace régulier entre le logo et le texte */
   }
 }
 
