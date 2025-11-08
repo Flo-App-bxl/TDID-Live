@@ -231,6 +231,20 @@
     .fsbtn{top:12px}
   }
 
+/* PC uniquement : bannière plus large */
+@media (pointer:fine) and (min-width: 1024px) {
+  .banner{
+    max-width: 1300px;
+    width: 95vw;
+    font-size: 2.8em;      /* texte un peu plus gros = plus haut aussi */
+    padding: 45px 24px;    /* plus de padding haut/bas => plus de hauteur */
+    /* optionnel si tu veux être sûr qu’elle ne soit jamais trop basse : */
+    min-height: 140px;
+  }
+}
+
+
+  
   /* ——— Mobile + paysage : sidebar affinée + scroll /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
 /* ——— Mobile + paysage : sidebar affinée + scroll image ——— */
 @media (pointer:coarse) and (orientation:landscape){
