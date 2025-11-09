@@ -37,12 +37,12 @@
   justify-content:center;
   font-size:1.1em;
   min-width:1.2em;
-  position:relative;   /* 👉 pour positionner la bulle par rapport à la LED */
+  position:top;   /* 👉 pour positionner la bulle par rapport à la LED */
 }
 
 /* Clignotement (SP) */
 .led-blink{
-  animation:ledBlink .8s linear infinite;
+  animation:ledBlink .2s linear infinite;
 }
 @keyframes ledBlink{
   0%,40%,100%{opacity:1;}
