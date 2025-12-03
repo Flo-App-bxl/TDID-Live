@@ -1,0 +1,1276 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>TDID – Train and Departure Information for Driver</title>
+
+<link rel="icon" type="image/jpeg" href="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg">
+<link rel="apple-touch-icon" href="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TDID">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="theme-color" content="#0f1115" />
+
+<style>
+  :root{--bg:#0f1115;--fg:#eaeef5;--card:#141923;--line:#1e2330;--accent:#1a5bff;--ok:#18c58f;--warn:#f2b636;--err:#ff4d4f}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  body{display:flex;flex-direction:column}
+
+  .top{flex-shrink:0;height:64px;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#12151bde;border-bottom:1px solid var(--line);z-index:99}
+  .brand{font-weight:700;margin-right:8px}
+  .btn{padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:#141923;color:var(--fg);cursor:pointer}
+  .btn.active{background:var(--accent);color:#fff;border-color:transparent}
+  .status{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+  .stamp{opacity:.9;font-size:.9em;}
+  #stamp{display:inline-block;text-align:right;white-space:pre-line;line-height:1.1em;}
+  .toggle{padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#1b2130;color:#fff;cursor:pointer;font-size:.85em;display:none}
+  .toggle.active{background:#2a3347}
+  
+  /* LED emoji */
+  #led{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    font-size:1.1em;
+    min-width:1.2em;
+    position:top;
+  }
+
+  /* Clignotement (SP) */
+  .led-blink{
+    animation:ledBlink .2s linear infinite;
+  }
+  @keyframes ledBlink{
+    0%,40%,100%{opacity:1;}
+    50%,90%{opacity:.2;}
+  }
+
+  /* Infobulle LED */
+  .led-tooltip {
+    position: absolute;
+    background: rgba(20, 25, 35, 0.95);
+    color: #eaeef5;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 0.8em;
+    white-space: nowrap;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 130%;
+    bottom: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 50;
+  }
+  .led-tooltip.show {
+    opacity: 1;
+  }
+
+  /* Zone principale corrigée pour iOS */
+  .wrap{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    position:relative; height:100svh; overflow:auto;
+  }
+  .wrap::-webkit-scrollbar{display:none}
+  img{max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto}
+
+  .note{position:fixed;bottom:6px;left:50%;transform:translateX(-50%);opacity:.9;font-size:.85em;text-align:center;white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis;z-index:6}
+
+  /* ——— Bandeau alerte style indicateur M7 (offline + FR/NL zap) ——— */
+  .banner{
+    position:fixed;
+    bottom:calc(5vh + env(safe-area-inset-bottom));
+    left:50%;
+    transform:translateX(-50%);
+    background:#000000;
+    color:#FFB300;
+    border:2px solid #C0C0C0;
+    border-radius:10px;
+    font-family:'Consolas','Lucida Console','Courier New',monospace;
+    font-weight:700;
+    font-size:2.4em;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    text-align:center;
+    width:90vw;
+    max-width:900px;
+    padding:30px 16px;
+    line-height:1.2em;
+    z-index:999;
+    display:none;
+    overflow:hidden;
+    box-shadow:
+      inset 0 0 6px rgba(255,179,0,0.15),
+      0 0 14px rgba(255,179,0,0.25);
+    text-shadow:
+      0 0 6px rgba(255,179,0,0.7),
+      0 0 12px rgba(255,179,0,0.4),
+      0 0 18px rgba(255,179,0,0.2);
+    animation:powerOn 1.2s ease-out forwards;
+  }
+
+  .banner span{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0 1.5rem;
+    opacity:0;
+  }
+
+  .banner span:nth-child(1){
+    animation:zapFR 8s infinite steps(1, end);
+  }
+  .banner span:nth-child(2){
+    animation:zapNL 8s infinite steps(1, end);
+  }
+
+  @keyframes zapFR{
+    0%{opacity:1;}
+    49.9%{opacity:1;}
+    50%{opacity:0;}
+    100%{opacity:0;}
+  }
+
+  @keyframes zapNL{
+    0%{opacity:0;}
+    49.9%{opacity:0;}
+    50%{opacity:1;}
+    100%{opacity:1;}
+  }
+
+  @keyframes powerOn{
+    0%{opacity:0;color:#332100;text-shadow:none;}
+    50%{opacity:1;color:#FF9A00;text-shadow:0 0 4px rgba(255,179,0,0.5);}
+    100%{
+      color:#FFB300;
+      text-shadow:
+        0 0 6px rgba(255,179,0,0.7),
+        0 0 12px rgba(255,179,0,0.4),
+        0 0 18px rgba(255,179,0,0.2);
+    }
+  }
+
+  .splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0f1115e0;z-index:30}
+  .splash video{max-width:80vw;border-radius:10px}
+  .splash .skip{position:absolute;bottom:20px;right:20px;padding:8px 14px;background:#1b2130;color:#fff;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+
+  .rotate{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#0f1115cf;z-index:25}
+  .rotate .box{padding:16px 20px;border:1px solid var(--line);border-radius:12px;background:#161a24;text-align:center}
+
+  .night-overlay{
+    position:absolute;
+    inset:0;
+    background:rgba(5,6,10,0.94);
+    display:none;
+    z-index:15;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:5vh 4vw;
+    color:#eaeef5;
+    text-align:center;
+  }
+  .night-logo{
+    width:220px;
+    max-width:60vw;
+    margin-bottom:20px;
+  }
+  #nightLine1{
+    font-size:2.7em;
+    font-weight:700;
+    margin:8px 0;
+  }
+  #nightLine2{
+    font-size:2.1em;
+    margin:6px 0;
+  }
+
+  .fsbtn{position:fixed;right:12px;top:72px;z-index:26;padding:8px 12px;border-radius:10px;border:1px solid var(--line);
+    background:#141923;color:#fff;font-size:.9em;display:none;cursor:pointer;}
+
+  @media (pointer:coarse){
+    .top{height:52px;padding:8px}
+    .btn{padding:6px 10px}
+    .banner{font-size:1.5em}
+    .wrap{align-items:stretch}
+    img{height:100vh;max-height:100vh}
+    .fsbtn{top:12px}
+  }
+
+  @media (pointer:fine) and (min-width: 1024px) {
+    .banner{
+      max-width: 1300px;
+      width: 85vw;
+      font-size: 3em;
+      padding: 20px 20px;
+      min-height: 140px;
+    }
+    .night-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .night-logo {
+      margin-bottom: 24px;
+    }
+  }
+
+  @media (pointer:coarse) and (orientation:landscape){
+    :root{--side:75px;}
+    body{flex-direction:row}
+
+    .top{
+      position:fixed;
+      left:0;
+      top:0;
+      bottom:0;
+      height:100svh;
+      width:var(--side);
+      border-bottom:none;
+      border-right:1px solid var(--line);
+      flex-direction:column;
+      align-items:center;
+      gap:8px;
+      padding:8px 6px;
+      background:#12151bf2;
+
+      padding-top:calc(8px + env(safe-area-inset-top));
+      padding-bottom: calc(4vh + env(safe-area-inset-bottom));
+    }
+
+    .brand{
+      transform:rotate(0deg);
+      transform-origin:center;
+      margin:0;
+      white-space:nowrap;
+    }
+
+    .btn{
+      padding:6px 4px;
+      border-radius:10px;
+      width:100%;
+      font-size:.92em;
+    }
+
+    .status{
+      margin-left:0;
+      margin-top:auto;
+      margin-bottom:calc(16px + env(safe-area-inset-bottom));
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:6px;
+    }
+
+    #led{
+      display:block;
+    }
+
+    .stamp{
+      writing-mode:vertical-rl;
+      transform:rotate(180deg);
+      align-self:flex-end;
+      font-size:.72em;
+    }
+
+    .wrap{
+      margin-left:var(--side);
+      height:100svh;
+      overflow:auto;
+    }
+    .wrap::-webkit-scrollbar{display:none}
+
+    img{
+      width:calc(100vw - var(--side));
+      max-width:none;
+      height:auto;
+      object-fit:contain;
+      display:block;
+      margin:0 auto;
+    }
+
+    .note{
+      left:calc(50% + var(--side)/2);
+    }
+    
+    #led .led-tooltip{
+      top:auto;
+      bottom:130%;
+    }
+
+    .fsbtn{
+      top:12px;
+      right:12px;
+    }
+    
+    .banner{
+      left:calc(var(--side) + 12px);
+      width:calc(100vw - var(--side) - 6vw);
+      bottom:calc(3vh + env(safe-area-inset-bottom));
+      transform:none;
+      font-size:1.5em;
+    }
+  }
+</style>
+</head>
+
+<body>
+  
+
+  
+  <div class="top" id="topbar">
+    <span class="brand">TDID</span>
+    <button class="btn" id="brel">Brel</button>
+    <button class="btn" id="delta">Delta</button>
+    <button class="btn" id="erasme">Erasm.</button>
+    <button class="btn" id="expl">Expl.</button>
+    <div class="status">
+      <button id="forceMirror" class="toggle">Miroir 15 min</button>
+      <span id="led" class="dot"></span>
+      <span id="stamp">—</span>
+    </div>
+  </div>
+
+  <button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
+
+  <div class="banner" id="banner">
+    <span>REFRESH &gt; 5 MIN<br>VÉRIFIER FIABILITÉ VIA ‘LAST REFRESH’</span>
+    <span>REFRESH &gt; 5 MIN<br>CONTROLEER BETROUWBAARHEID VIA ‘LAST REFRESH’</span>
+  </div>
+
+  <div class="wrap">
+    <div class="splash" id="splash">
+      <video id="intro" autoplay muted playsinline preload="auto"
+        src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro.mp4"></video>
+      <button class="skip" id="skipIntro">Passer</button>
+    </div>
+
+    <div class="rotate" id="rotateHint">
+      <div class="box">
+        📱 Tournez votre téléphone en mode paysage<br/>
+        📱 Draai uw telefoon naar de liggende stand
+      </div>
+    </div>
+
+    <img id="view" alt="TDID" />
+
+    <div class="night-overlay" id="nightOverlay">
+      <img src="https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg"
+           class="night-logo" alt="TDID logo">
+      <div id="nightLine1">Mode Night 🌙</div>
+      <div id="nightLine2">Bonne nuit</div>
+    </div>
+  </div>
+  <div class="note" id="note"></div>
+
+
+
+<script>
+/* ====== Constantes ====== */
+const GH_USER="Flo-App-bxl", GH_REPO="TDID-Live", GH_BRANCH="main";
+const GH_RAW = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/${GH_BRANCH}`;
+const GH_API = `https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents`;
+const JSDELIVR = `https://cdn.jsdelivr.net/gh/${GH_USER}/${GH_REPO}@${GH_BRANCH}`;
+const MIRROR_DIR={brel:"mirror_brel",delta:"mirror_delta",erasme:"mirror_erasme",expl:"mirror_calcul"};
+const ERR_IMG=`${GH_RAW}/TDID_Erreur.png`;
+
+const JSON_KEY = {
+  brel:   "brel",
+  delta:  "delta",
+  erasme: "erasme",
+  expl:   "calcul"
+};
+
+const INFO_LOCAL_KEY = {
+  brel:  "info_brel",
+  delta: "info_delta",
+  erasme:"info_erasm",
+  expl:  null
+};
+
+const INFO_MAX_AGE = 30 * 60 * 1000;
+const CYCLE_MS = 20000;
+
+const TDID_NIGHT_IMG=`${GH_RAW}/TDID_Night.png`;
+const NIGHT_MIN_AGE = 600 * 1000;
+const NIGHT_OFF_AGE = 5 * 60 * 1000;
+
+const REFRESH_MS=6000, FETCH_MIN=60000, MIRROR_FORCE_MS=60000;
+const BANNER_GT5=5*60000, MIRROR_ERR_10=10*60000, CACHE_MIRROR_TTL=300000;
+const SP_FORCE_API_GT = 280 * 1000;
+
+const params = new URLSearchParams(location.search);
+const forceNight = (params.get("night") || "auto").trim();
+
+const forceBanner = params.get("banner") === "1";
+if (forceBanner) {
+  window.addEventListener('DOMContentLoaded', () => {
+    showBanner(true);
+  });
+}
+
+/* SharePoint (PNG + JSON) */
+const SP_BASE="https://stibmivb-my.sharepoint.com/personal/florent_legrain_stib_brussels";
+const SP_FOLDER="/personal/florent_legrain_stib_brussels/Documents/LiveMirror";
+const spRaw=f=>`${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER+"/"+f)}&t=${Date.now()}`;
+
+const DATA_SP = {
+  brel:   { img: spRaw("live_brel.png") },
+  delta:  { img: spRaw("live_delta.png") },
+  erasme: { img: spRaw("live_erasme.png") },
+  expl:   { img: spRaw("calcul.png") }
+};
+
+const spJson=f=>`${SP_BASE}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(SP_FOLDER+"/TDID_JSON/"+f)}&t=${Date.now()}`;
+const DATA_SP_JSON = {
+  brel:   { json: spJson("time_brel_latest.json") },
+  delta:  { json: spJson("time_delta_latest.json") },
+  erasme: { json: spJson("time_erasme_latest.json") },
+  expl:   { json: spJson("time_calcul_latest.json") }
+};
+
+/* UI refs */
+const img=document.getElementById('view'), note=document.getElementById('note'),
+      led=document.getElementById('led'), stamp=document.getElementById('stamp'),
+      banner=document.getElementById('banner'),
+      intro=document.getElementById('intro'), splash=document.getElementById('splash'),
+      skip=document.getElementById('skipIntro'), fsBtn=document.getElementById('fsbtn'),
+      forceBtn=document.getElementById('forceMirror'), rotateHint=document.getElementById('rotateHint'),
+      nightOverlay=document.getElementById('nightOverlay'),
+      nightLine1=document.getElementById('nightLine1'),
+      nightLine2=document.getElementById('nightLine2');
+
+const ledIcon = document.createElement('span');
+led.appendChild(ledIcon);
+
+/* Détection mobile & rotation */
+function isMobile(){return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)|| (matchMedia&&matchMedia("(pointer:coarse)").matches);}
+function isLandscape(){return window.innerWidth>window.innerHeight;}
+function updateRotateHint(){ if(!isMobile()){rotateHint.style.display='none';return;} rotateHint.style.display=isLandscape()?'none':'flex'; }
+addEventListener('resize', updateRotateHint);
+addEventListener('orientationchange', updateRotateHint);
+updateRotateHint();
+
+/* Fullscreen mobile */
+function canFS(){return !!document.documentElement.requestFullscreen;}
+async function enterFS(){try{await document.documentElement.requestFullscreen();return true;}catch{return false;}}
+function markInteracted(){ if(isMobile() && canFS()){ fsBtn.style.display='inline-block'; } }
+document.addEventListener('click',markInteracted);
+document.addEventListener('touchstart',markInteracted);
+fsBtn.addEventListener('click', async()=>{ const ok=await enterFS(); if(ok){ fsBtn.style.display='none'; }});
+
+/* Sélection dépôt */
+const btns = {
+  brel:   document.getElementById('brel'),
+  delta:  document.getElementById('delta'),
+  erasme: document.getElementById('erasme'),
+  expl:   document.getElementById('expl')
+};
+
+let depot=localStorage.getItem('tdid_depot')||'brel';
+function setActive(){for(const k in btns){btns[k].classList.toggle('active',k===depot);}}
+for(const k in btns){btns[k].onclick=()=>{depot=k;localStorage.setItem('tdid_depot',k);forceFetch=true;preferSPNext=true;setActive();tick();};}
+setActive();
+
+/* Splash vidéo */
+skip.onclick=()=>splash.style.display='none'; setTimeout(()=>splash.style.display='none',8000);
+
+/* États */
+let latest     ={brel:null,delta:null,erasme:null,expl:null};
+let lastFetchAt={brel:0,   delta:0,   erasme:0,   expl:0};
+let lastHttp   ={brel:'',  delta:'',  erasme:'',  expl:''};
+let lastSource ={brel:'',  delta:'',  erasme:'',  expl:''};
+let lastMirror ={brel:null,delta:null,erasme:null,expl:null};
+let forceFetch=true; let bannerLatch={brel:false,delta:false,erasme:false,expl:false};
+
+let latestInfos = {
+  brel:  null,
+  delta: null,
+  erasme:null,
+  expl:  null
+};
+
+let isMirror=false, mirrorTimer=null; let preferSPNext=false;
+
+/* État mode nuit */
+let nightShown=false;
+let nightToggleTimer=null;
+
+/* Override miroir 15 min */
+const OV_KEY='tdid_mirror_override_until';
+function overrideActive(){const t=+localStorage.getItem(OV_KEY)||0;return Date.now()<t;}
+function setOverride(min){localStorage.setItem(OV_KEY,String(Date.now()+min*60000));updateBtn(true);forceFetch=true;enterMirror(true);tick();}
+function clearOverride(){localStorage.removeItem(OV_KEY);updateBtn(false);leaveMirror();preferSPNext=true;forceFetch=true;tick();}
+function updateBtn(activeNow){
+  const on=activeNow??overrideActive();
+  forceBtn.classList.toggle('active',on);
+  forceBtn.textContent=on?"Miroir (forcé) ⏱ – Stop":"Miroir 15 min";
+  const show=(!isMirror)||on;
+  forceBtn.style.display=show?'inline-block':'none';
+}
+forceBtn.addEventListener('click',()=>{overrideActive()?clearOverride():setOverride(15);});
+
+/* Mode miroir */
+function enterMirror(startupKick=true){
+  if(!isMirror){
+    isMirror=true; updateBtn();
+    const inNight = isNightActive();
+    if(startupKick) fetchLatest(depot,!inNight).catch(()=>{});
+    if(mirrorTimer) clearInterval(mirrorTimer);
+    mirrorTimer=setInterval(()=>{
+      if(isMirror){
+        const n=isNightWindow();
+        fetchLatest(depot,!n).catch(()=>{});
+      }
+    }, MIRROR_FORCE_MS);
+  }
+}
+function leaveMirror(){
+  isMirror=false; updateBtn();
+  if(mirrorTimer){ clearInterval(mirrorTimer); mirrorTimer=null; }
+}
+
+/* Nuit */
+function isNightWindow() {
+  try {
+    const fmt = new Intl.DateTimeFormat('fr-BE', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Brussels'
+    });
+    const parts = fmt.formatToParts(new Date());
+    const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
+    const total = h * 60 + m;
+    return (total >= 60 && total < 225);
+  } catch {
+    const d = new Date();
+    const h = d.getHours(), m = d.getMinutes();
+    const total = h * 60 + m;
+    return total >= 60 && total < 225;
+  }
+}
+
+function isNightActive() {
+  if (forceNight === "0") return false;
+  if (forceNight === "1") return true;
+  return isNightWindow();
+}
+
+/* LED */
+let ledTimer = null;
+let ledAngle = 0;
+let currentStatusLabel = '';
+
+function setLed(mode){
+  if (ledTimer){ clearInterval(ledTimer); ledTimer = null; }
+  led.className = '';
+  led.style.opacity = 1;
+  led.style.transform = '';
+  ledIcon.textContent = '';
+
+  switch(mode){
+    case 'sp':
+      ledIcon.textContent = '🟢';
+      led.dataset.label = "SP";
+      led.classList.add('led-blink');
+      break;
+
+    case 'miroir':
+      ledIcon.textContent = '🟩';
+      led.dataset.label = "Miroir";
+      ledAngle = (ledAngle === 0 ? 45 : 0);
+      led.style.transform = `rotate(${ledAngle}deg)`;
+      break;
+
+    case 'miroir-cache':
+      ledIcon.textContent = '🔷';
+      led.dataset.label = "Miroir-cache";
+      ledAngle = (ledAngle === 0 ? 45 : 0);
+      led.style.transform = `rotate(${ledAngle}deg)`;
+      break;
+
+    case 'err-5':
+      ledIcon.textContent = '🔶';
+      led.dataset.label = "Erreur: miroir KO >5min";
+      ledAngle = (ledAngle === 0 ? 45 : 0);
+      led.style.transform = `rotate(${ledAngle}deg)`;
+      break;
+
+    case 'err-10': {
+      const frames = ['⭕️','❌'];
+      let i = 0;
+      ledIcon.textContent = frames[i];
+      led.dataset.label = "Erreur: Miroir >10min";
+      ledTimer = setInterval(()=>{
+        i = 1 - i;
+        ledIcon.textContent = frames[i];
+      }, 800);
+      break;
+    }
+
+    case 'err-api': {
+      const frames = ['🛑','🆘'];
+      let i = 0;
+      ledIcon.textContent = frames[i];
+      led.dataset.label = "Erreur API/latest KO";
+      ledTimer = setInterval(()=>{
+        i = 1 - i;
+        ledIcon.textContent = frames[i];
+      }, 800);
+      break;
+    }
+
+    case 'night': {
+      const frames = ['🌙','✨'];
+      let i = 0;
+      ledIcon.textContent = frames[i];
+      led.dataset.label = "Mode Night";
+      ledTimer = setInterval(()=>{
+        i = 1 - i;
+        ledIcon.textContent = frames[i];
+      }, 800);
+      break;
+    }
+
+    default:
+      ledIcon.textContent = '';
+      led.dataset.label = '';
+  }
+}
+
+led.addEventListener('click', () => {
+  const txt = led.dataset.label || '—';
+  showLedTooltip(txt);
+});
+
+let ledTooltip = null;
+let ledTooltipTimer = null;
+function ensureLedTooltip() {
+  if (!ledTooltip) {
+    ledTooltip = document.createElement('div');
+    ledTooltip.className = 'led-tooltip';
+    led.appendChild(ledTooltip);
+  }
+}
+function showLedTooltip(text) {
+  ensureLedTooltip();
+  ledTooltip.textContent = text;
+  if (ledTooltipTimer) clearTimeout(ledTooltipTimer);
+  ledTooltip.classList.add('show');
+  ledTooltipTimer = setTimeout(() => {
+    ledTooltip.classList.remove('show');
+  }, 3000);
+}
+
+/* Helpers UI */
+function setTop(status,label){
+  const now = new Date();
+  const dateStr = now.toLocaleDateString();
+  const timeStr = now.toLocaleTimeString();
+
+  if (isNightActive()) {
+    setLed('night');
+    stamp.textContent = `${dateStr}\n${timeStr}`;
+    return;
+  }
+
+  if (label === 'SP'){
+    setLed('sp');
+  }
+  else if (label === 'Miroir'){
+    setLed('miroir');
+  }
+  else if (label.startsWith('Miroir cache')){
+    setLed('miroir-cache');
+  }
+  else if (label.startsWith('Erreur (miroir >10min)')){
+    setLed('err-10');
+  }
+  else if (label.startsWith('Erreur (miroir KO >5min)')){
+    setLed('err-5');
+  }
+  else if (label.startsWith('Erreur')){
+    setLed('err-api');
+  }
+  else{
+    setLed(null);
+  }
+
+  currentStatusLabel = label || '';
+  stamp.textContent = `${dateStr}\n${timeStr}`;
+}
+
+function renderFrom(src,statusLabel){
+  return new Promise(res=>{
+    const t=new Image();
+    t.onload=()=>{
+      img.src=t.src;
+      setTop(statusLabel.status,statusLabel.text);
+      res(true);
+    };
+    t.onerror=()=>res(false);
+    t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();
+  });
+}
+function dbg(parts){
+  const base = parts.filter(Boolean).join(' | ');
+  const prefix = currentStatusLabel ? `[${currentStatusLabel}] ` : '';
+  note.textContent = prefix + base;
+}
+
+/* SP loader (PNG) */
+async function loadSpImage(k){
+  const u=DATA_SP[k].img; let via='fetch';
+  try{
+    const r=await fetch(u,{cache:'no-store',credentials:'include',mode:'cors'});
+    if(r.ok){const b=await r.blob(); return {ok:true,url:URL.createObjectURL(b),via};}
+  }catch{}
+  via='img';
+  const okImg = await new Promise(res=>{const im=new Image();im.onload=()=>res(true);im.onerror=()=>res(false);im.src=u;});
+  if(okImg) return {ok:true,url:u,via};
+  return {ok:false,reason:'Load failed'};
+}
+
+/* latest.json via SharePoint (SP seulement, aucune requête GitHub) */
+async function fetchLatestFromSp(k){
+  const now = Date.now();
+  const cfg = DATA_SP_JSON[k];
+  if (!cfg || !cfg.json) throw new Error('no SP JSON for '+k);
+  const url = cfg.json;
+  let trace = [];
+  try{
+    const r = await fetch(url,{cache:'no-store',credentials:'include',mode:'cors'});
+    trace.push(`SPJSON:${r.status}`);
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+
+    lastFetchAt[k]=now;
+    lastHttp[k]=trace.join(' ');
+    lastSource[k]='SPJSON';
+
+    const key = JSON_KEY[k] || k;
+    const it = j?.items?.[key];
+    if (!it || !it.ts) throw new Error('bad json');
+
+    const tsMs = Number(it.ts)*1000;
+
+    // URL "miroir" depuis SP (si besoin)
+    let imgUrl = null;
+    if (it.file) {
+      const fname = it.file.split('/').pop();
+      if (fname) imgUrl = spRaw(fname);
+    }
+
+    const items = j.items || {};
+    const ilKey = INFO_LOCAL_KEY[k];
+    let infoLocal = null, infoCOM = null;
+
+    if (ilKey && items[ilKey] && items[ilKey].ts) {
+      const srcL = items[ilKey];
+      const tsL = Number(srcL.ts)*1000;
+      const fnameL = (srcL.file || '').split('/').pop();
+      if (fnameL) infoLocal = { ts: tsL, url: spRaw(fnameL) };
+    }
+
+    if (items.info_COM && items.info_COM.ts) {
+      const srcC = items.info_COM;
+      const tsC = Number(srcC.ts)*1000;
+      const fnameC = (srcC.file || '').split('/').pop();
+      if (fnameC) infoCOM = { ts: tsC, url: spRaw(fnameC) };
+    }
+
+    latestInfos[k] = { local: infoLocal, com: infoCOM };
+
+    const prev = latest[k];
+    if (prev && tsMs < prev.ts) return prev;
+
+    latest[k] = { ts: tsMs, url: imgUrl || (prev ? prev.url : '') };
+    return latest[k];
+
+  }catch(e){
+    lastHttp[k]=trace.length ? trace.join(' ') : `SPJSON:fail(${e.message})`;
+    lastSource[k]='SPJSON';
+    throw e;
+  }
+}
+
+/* latest.json GitHub */
+async function fetchLatest(k,forceApi=false){
+  const now=Date.now();
+  const night=isNightWindow();
+  const allowApi = forceApi && !night;
+
+  if((!forceApi || night) && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latest[k]) return latest[k];
+
+  let path;
+  if (k === 'brel') {
+    path = '/time_brel/latest.json';
+  } else if (k === 'delta') {
+    path = '/time_delta/latest.json';
+  } else if (k === 'erasme') {
+    path = '/time_erasme/latest.json';
+  } else if (k === 'expl') {
+    path = '/time_calcul/latest.json';
+  } else {
+    throw new Error('unknown depot ' + k);
+  }
+  const urls = [
+    {u:`${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'RAW'},
+    {u:`${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'CDN'},
+    {u:`${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`, tag: allowApi ? 'API*' : 'API'}
+  ];
+  let trace=[], source='-';
+  async function tryJson(u,tag,init){
+    try{
+      const r=await fetch(u,{cache:'no-store',...init}); trace.push(`${tag}:${r.status}`);
+      if(!r.ok) return null; source=tag; return await r.json();
+    }catch{ trace.push(`${tag}:fail`); return null; }
+  }
+
+  let j=null;
+  if(allowApi){
+    j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+    if(!j) j = await tryJson(urls[0].u, urls[0].tag);
+    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
+  }else{
+    j = await tryJson(urls[0].u, urls[0].tag);
+    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
+    if(!j && !night){
+      j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+    }
+  }
+
+  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
+  if(!j) throw new Error('fetch failed');
+
+  const key = JSON_KEY[k] || k;
+  const it  = j?.items?.[key];
+  if (!it?.ts) throw new Error('bad json');
+
+  const tsMs = Number(it.ts) * 1000;
+  let imgUrl = it.url;
+  if(!imgUrl){
+    const f=(it.file||'').split('/').pop();
+    if(!f) throw new Error('no file');
+    imgUrl = `${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
+  }
+
+  const items = j.items || {};
+  let infoLocal = null;
+  let infoCOM   = null;
+
+  const ilKey = INFO_LOCAL_KEY[k];
+  if (ilKey && items[ilKey] && items[ilKey].ts) {
+    const srcL = items[ilKey];
+    const tsL  = Number(srcL.ts) * 1000;
+    let urlL   = srcL.url;
+    if (!urlL) {
+      const fileL = srcL.file || "";
+      if (fileL) urlL = `${GH_RAW}/${fileL}`;
+    }
+    if (urlL) infoLocal = { ts: tsL, url: urlL };
+  }
+
+  if (items.info_COM && items.info_COM.ts) {
+    const srcC = items.info_COM;
+    const tsC  = Number(srcC.ts) * 1000;
+    let urlC   = srcC.url;
+    if (!urlC) {
+      const fileC = srcC.file || "";
+      if (fileC) urlC = `${GH_RAW}/${fileC}`;
+    }
+    if (urlC) infoCOM = { ts: tsC, url: urlC };
+  }
+
+  latestInfos[k] = { local: infoLocal, com: infoCOM };
+
+  const prev = latest[k];
+  if(prev && tsMs < prev.ts){
+    return prev;
+  }
+
+  latest[k] = { ts: tsMs, url: imgUrl };
+  forceFetch=false;
+  return latest[k];
+}
+
+function showBanner(show){
+  if (forceBanner) {
+    banner.style.display = 'block';
+    return;
+  }
+  banner.style.display = show ? 'block' : 'none';
+}
+
+/* Night overlay */
+async function showNightScreen() {
+  if (!nightOverlay) return;
+  showBanner(false);
+
+  nightOverlay.style.display = 'flex';
+
+  if (nightToggleTimer) clearInterval(nightToggleTimer);
+  let toggle = false;
+  nightLine1.textContent = "Mode Night 🌙";
+  nightLine2.textContent = "Bonne nuit";
+  nightToggleTimer = setInterval(() => {
+    toggle = !toggle;
+    nightLine1.textContent = "Mode Night 🌙";
+    nightLine2.textContent = toggle ? "Bonne nuit" : "Goede nacht";
+  }, 5000);
+
+  await renderFrom(
+    "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg",
+    { status: 'ok', text: 'Night' }
+  );
+}
+
+async function handleNightOverlay(k) {
+  const baseNight = isNightWindow();
+  const forceOn   = (forceNight === "1");
+  const forceOff  = (forceNight === "0");
+
+  const L = latest[k];
+  const ageMs = L ? (Date.now() - L.ts) : Infinity;
+  const ageSec = Math.round(ageMs / 1000);
+
+  if (isNightActive()) {
+    dbg([
+      `NIGHT Δ=${isFinite(ageMs) ? ageSec + 's' : '∞'}`,
+      `baseNight:${baseNight ? '1' : '0'}`,
+      `forceNight:${forceNight}`,
+      `nightShown:${nightShown ? 'ON' : 'OFF'}`
+    ]);
+  }
+
+  if (forceOff) {
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
+    }
+    return;
+  }
+
+  const inNight = forceOn || baseNight;
+
+  if (inNight && ageMs >= NIGHT_MIN_AGE) {
+    if (!nightShown) {
+      await showNightScreen();
+      nightShown = true;
+    }
+  } else {
+    if (nightOverlay) nightOverlay.style.display = 'none';
+    nightShown = false;
+    if (nightToggleTimer) {
+      clearInterval(nightToggleTimer);
+      nightToggleTimer = null;
+    }
+  }
+}
+
+/* Infos */
+function getInfoFlags(k) {
+  const now  = Date.now();
+  const info = latestInfos[k];
+  if (!info) {
+    return { hasLocal:false, hasCom:false, local:null, com:null };
+  }
+
+  let hasLocal = false, hasCom = false;
+  let local = null, com = null;
+
+  if (info.local && (now - info.local.ts <= INFO_MAX_AGE)) {
+    hasLocal = true;
+    local = info.local;
+  }
+  if (info.com && (now - info.com.ts <= INFO_MAX_AGE)) {
+    hasCom = true;
+    com = info.com;
+  }
+
+  return { hasLocal, hasCom, local, com };
+}
+
+async function renderSlotImage(k, liveUrl, statusLabel) {
+  // 🔒 Pour "expl", on ne montre QUE le miroir (mirror_calcul), jamais les info*
+  if (k === 'expl') {
+    return renderFrom(liveUrl, statusLabel);
+  }
+
+  const now = Date.now();
+  const pos = now % CYCLE_MS;
+
+  const { hasLocal, hasCom, local, com } = getInfoFlags(k);
+
+  let src = liveUrl;
+
+  if (pos < 5000) {
+    src = liveUrl;
+  }
+  else if (pos < 10000) {
+    if (hasLocal && local)      src = local.url;
+    else if (hasCom && com)     src = com.url;
+    else                        src = liveUrl;
+  }
+  else if (pos < 15000) {
+    src = liveUrl;
+  }
+  else {
+    if (hasLocal && hasCom && com)      src = com.url;
+    else if (hasLocal && local)         src = local.url;
+    else if (hasCom && com)             src = com.url;
+    else                                src = liveUrl;
+  }
+
+  return renderFrom(src, statusLabel);
+}
+
+/* Tick */
+async function tick(){
+  const k=depot;
+  const inNight = isNightActive();
+
+  const override = overrideActive();
+  const preferSPThisTick = preferSPNext; preferSPNext=false;
+
+  /* ——— SP prioritaire si pas d'override ——— */
+  if(!override){
+    const sp = await loadSpImage(k);
+    if(sp.ok){
+      leaveMirror(); 
+      updateBtn(false);
+
+      // Affiche le LIVE SP
+      await renderSlotImage(k, sp.url, {status:'ok',text:'SP'});
+
+      try{
+        // latest.json depuis SharePoint (aucun GitHub en SP)
+        const L = await fetchLatestFromSp(k);
+        const ageMs = Date.now() - L.ts;
+        const ageSec = Math.round(ageMs/1000);
+
+        // Bannière >5 min
+        bannerLatch[k] = (!inNight && ageMs > BANNER_GT5);
+        showBanner(bannerLatch[k]);
+
+        dbg([
+          `SP: OK(${sp.via})`,
+          `latest: SPJSON`,
+          `trace: ${lastHttp[k]}`,
+          `Δ=${ageSec}s`,
+          `bandeau: ${bannerLatch[k] ? 'ON>5m' : 'OFF'}`,
+          `source: SP`
+        ]);
+
+      }catch(e){
+        showBanner(false);
+        dbg([
+          `SP: OK(${sp.via})`,
+          `latest SP: KO`,
+          `err: ${e.message}`
+        ]);
+      }
+
+      await handleNightOverlay(k);
+      return;
+    }else if(preferSPThisTick){
+      dbg([
+        `SP: KO(${sp.reason || '?'})`,
+        `hint: retry SP next tick`
+      ]);
+    }
+  }
+
+  /* ——— Mode Miroir (ou override) ——— */
+  enterMirror(true); 
+  updateBtn();
+
+  let L = null;
+
+  try {
+    const forceApi = !isNightWindow();
+    L = await fetchLatest(k, forceApi);
+  }
+  catch (e) {
+
+    const cached = lastMirror[k];
+    const cacheAge = cached ? (Date.now() - cached.time) : Infinity;
+
+    if (cached && cacheAge <= CACHE_MIRROR_TTL) {
+        showBanner(false);
+        dbg([
+            `API/latest: KO`,
+            `affiche: cache ≤300s`
+        ]);
+        await handleNightOverlay(k);
+        return;
+    }
+
+    if (cached && cacheAge <= MIRROR_ERR_10) {
+        showBanner(true);
+        dbg([
+            `API/latest: KO`,
+            `cache >300s & <10min`,
+            `affiche dernière image valide`
+        ]);
+        await handleNightOverlay(k);
+        return;
+    }
+
+    await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur API >10min' });
+    showBanner(false);
+    dbg([
+        `API/latest: KO`,
+        `cache >10min`,
+        `affiche: erreur`
+    ]);
+    await handleNightOverlay(k);
+    return;
+  }
+
+  const ageMs = Date.now() - L.ts;
+  const ageSec = Math.round(ageMs / 1000);
+  const apiAgeSec = Math.round((Date.now() - lastFetchAt[k]) / 1000);
+
+  if (ageMs > MIRROR_ERR_10) {
+    await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
+    showBanner(false);
+
+    dbg([
+        `latest: ${lastSource[k]}`,
+        `trace: ${lastHttp[k]}`,
+        `Δ=${ageSec}s`,
+        `APIΔ=${apiAgeSec}s`,
+        `affiche: erreur`
+    ]);
+
+    await handleNightOverlay(k);
+    return;
+  }
+
+  const okMir = await renderSlotImage(k, L.url, { status:'warn', text:'Miroir' });
+
+  if (okMir) {
+    lastMirror[k] = { url: L.url, time: Date.now() };
+    showBanner(false);
+
+    dbg([
+        `latest: ${lastSource[k]}`,
+        `trace: ${lastHttp[k]}`,
+        `Δ=${ageSec}s`,
+        `APIΔ=${apiAgeSec}s`,
+        `affiche: miroir`
+    ]);
+
+    await handleNightOverlay(k);
+    return;
+  }
+
+  const cached = lastMirror[k];
+  const cacheAge = cached ? (Date.now() - cached.time) : Infinity;
+
+  if (cached && cacheAge <= CACHE_MIRROR_TTL) {
+    await renderSlotImage(k, cached.url, { status:'warn', text:'Miroir cache (≤300s)' });
+    showBanner(false);
+    dbg([
+        `miroir: KO`,
+        `affiche cache ≤300s`
+    ]);
+  }
+  else if (cached && cacheAge <= MIRROR_ERR_10) {
+    showBanner(true);
+    dbg([
+        `miroir: KO`,
+        `cache >300s & <10min`,
+        `affiche dernière image valide`
+    ]);
+  }
+  else {
+    await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
+    showBanner(false);
+    dbg([
+        `miroir: KO`,
+        `affiche: erreur`
+    ]);
+  }
+
+  await handleNightOverlay(k);
+}
+/* ====== Annonce audio (optionnelle) ====== */
+/* ====== Annonce audio (optionnelle) ====== */
+const ANNONCE_URL = 'https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/gh-pages/Annonce.mp3';
+
+let annonceAudio   = null;
+let annonceInterval = null;
+let annonceTimeout  = null;
+let annonceStarted  = false;
+
+function setupAnnonceAudio() {
+  annonceAudio = new Audio(ANNONCE_URL);
+  annonceAudio.preload = 'auto';
+
+  const PLAY_DELAY_MS = 10_000;   // 10 s après ouverture
+  const REPEAT_MS     = 60_000;   // toutes les minutes
+
+  const playOnce = () => {
+    if (!annonceAudio) return;
+    try {
+      annonceAudio.currentTime = 0;
+      const p = annonceAudio.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(() => {
+          // Autoplay bloqué, on attend une interaction utilisateur
+        });
+      }
+    } catch (e) {}
+  };
+
+  // Démarrage "officiel" de la boucle (une seule fois)
+  const startLoop = () => {
+    if (annonceStarted) return;       // déjà lancé → on ne fait rien
+    annonceStarted = true;
+
+    if (annonceTimeout) {
+      clearTimeout(annonceTimeout);   // on annule la tempo si elle existait
+      annonceTimeout = null;
+    }
+
+    playOnce();
+    annonceInterval = setInterval(playOnce, REPEAT_MS);
+  };
+
+  // Tempo auto après 10 s (si personne n'a touché avant)
+  annonceTimeout = setTimeout(startLoop, PLAY_DELAY_MS);
+
+  // Contournement iOS / Chrome / Edge : 1er touch/clic/clavier débloque tout
+  const unlock = () => {
+    startLoop();
+    document.removeEventListener('touchstart', unlock);
+    document.removeEventListener('click', unlock);
+    document.removeEventListener('keydown', unlock);
+  };
+
+  document.addEventListener('touchstart', unlock, { once: true });
+  document.addEventListener('click',      unlock, { once: true });
+  document.addEventListener('keydown',    unlock, { once: true });
+}
+
+// On initialise après le chargement du DOM
+document.addEventListener('DOMContentLoaded', setupAnnonceAudio);
+
+/* Start */
+setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
+tick();
+</script>
+</body>
+</html>
