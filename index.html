@@ -1206,13 +1206,14 @@ async function tick(){
 
   await handleNightOverlay(k);
 }
-/* ====== Annonce audio (optionnelle) ====== */
+
+
 /* ====== Annonce audio (optionnelle) ====== */
 const ANNONCE_URL = 'https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/gh-pages/Annonce.mp3';
 
-let annonceAudio   = null;
-let annonceInterval = null;
-let annonceTimeout  = null;
+let annonceAudio    = null;
+let annonceTimeout  = null;   // tempo de 10 s avant premier lancement
+let annonceNextWait = null;   // tempo entre 2 lectures (après "ended")
 let annonceStarted  = false;
 
 function setupAnnonceAudio() {
@@ -1220,7 +1221,7 @@ function setupAnnonceAudio() {
   annonceAudio.preload = 'auto';
 
   const PLAY_DELAY_MS = 10_000;   // 10 s après ouverture
-  const REPEAT_MS     = 60_000;   // toutes les minutes
+  const REPEAT_MS     = 60_000;   // 1 minute après la FIN
 
   const playOnce = () => {
     if (!annonceAudio) return;
@@ -1235,29 +1236,40 @@ function setupAnnonceAudio() {
     } catch (e) {}
   };
 
-  // Démarrage "officiel" de la boucle (une seule fois)
+  // Quand la lecture se termine, on programme la suivante dans 60 s
+  annonceAudio.addEventListener('ended', () => {
+    if (!annonceStarted) return;
+    if (annonceNextWait) {
+      clearTimeout(annonceNextWait);
+      annonceNextWait = null;
+    }
+    annonceNextWait = setTimeout(() => {
+      playOnce();
+    }, REPEAT_MS);
+  });
+
+  // Démarrage "officiel" (une seule fois)
   const startLoop = () => {
-    if (annonceStarted) return;       // déjà lancé → on ne fait rien
+    if (annonceStarted) return;      // déjà lancé → on ne fait rien
     annonceStarted = true;
 
     if (annonceTimeout) {
-      clearTimeout(annonceTimeout);   // on annule la tempo si elle existait
+      clearTimeout(annonceTimeout);  // on annule la tempo si elle existait
       annonceTimeout = null;
     }
 
-    playOnce();
-    annonceInterval = setInterval(playOnce, REPEAT_MS);
+    playOnce();                      // la suite sera gérée par l'event "ended"
   };
 
   // Tempo auto après 10 s (si personne n'a touché avant)
   annonceTimeout = setTimeout(startLoop, PLAY_DELAY_MS);
 
-  // Contournement iOS / Chrome / Edge : 1er touch/clic/clavier débloque tout
+  // Contournement iOS / Chrome / Edge : 1er touch/clic/clavier lance la boucle
   const unlock = () => {
     startLoop();
     document.removeEventListener('touchstart', unlock);
-    document.removeEventListener('click', unlock);
-    document.removeEventListener('keydown', unlock);
+    document.removeEventListener('click',      unlock);
+    document.removeEventListener('keydown',    unlock);
   };
 
   document.addEventListener('touchstart', unlock, { once: true });
@@ -1267,7 +1279,6 @@ function setupAnnonceAudio() {
 
 // On initialise après le chargement du DOM
 document.addEventListener('DOMContentLoaded', setupAnnonceAudio);
-
 /* Start */
 setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
 tick();
