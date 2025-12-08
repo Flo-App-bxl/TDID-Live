@@ -51,14 +51,14 @@
 
 #decoOverlay {
   position: fixed;
-  top: 64px; /* ne couvre pas la topbar */
+  top: 0px;
   left: 0;
   width: 100vw;
   height: calc(100vh - 64px);
-  z-index: 50; /* devant l’image live mais derrière la bannière */
-  pointer-events: none; /* clics passent à travers */
+  z-index: 50;
+  pointer-events: none;
   display: none;
-  object-fit: contain;
+  object-fit: cover;    /* <-- MODIF ICI */
   background: transparent;
 }
 
@@ -338,7 +338,7 @@
 
 <body>
   
-
+<img id="decoOverlay" />
   
   <div class="top" id="topbar">
     <span class="brand">TDID</span>
@@ -352,7 +352,7 @@
       <span id="stamp">—</span>
     </div>
   </div>
-<img id="decoOverlay" />
+
   <button id="fsbtn" class="fsbtn">🔳 Plein écran</button>
 
   <div class="banner" id="banner">
