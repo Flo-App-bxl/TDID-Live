@@ -1429,41 +1429,45 @@ return;
     return;
   }
 
-  const cached = lastMirror[k];
+    const cached = lastMirror[k];
   const cacheAge = cached ? (Date.now() - cached.time) : Infinity;
 
   if (cached && cacheAge <= CACHE_MIRROR_TTL) {
-    else {
-
-  if (!canShowErrorScreen()) {
+    // Cache miroir récent (≤ 300s) : on l'affiche, PAS d'écran erreur
+    await renderSlotImage(k, cached.url, { status:'warn', text:'Miroir cache (≤300s)' });
+    showBanner(false);
     dbg([
       `miroir: KO`,
-      `startup: on attend (loadingPhase)`
+      `affiche cache ≤300s`
     ]);
-    return;
   }
-
-  await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
-  showBanner(false);
-  dbg([
-      `miroir: KO`,
-      `affiche: erreur`
-  ]);
-}
   else if (cached && cacheAge <= MIRROR_ERR_10) {
+    // Cache entre 5 et 10 minutes : on garde la dernière image + bandeau
     showBanner(true);
     dbg([
-        `miroir: KO`,
-        `cache >300s & <10min`,
-        `affiche dernière image valide`
+      `miroir: KO`,
+      `cache >300s & <10min`,
+      `affiche dernière image valide`
     ]);
   }
   else {
+    // Plus de cache valide
+    if (!canShowErrorScreen()) {
+      // Phase de chargement initiale : on NE montre pas l'écran erreur
+      dbg([
+        `miroir: KO`,
+        `startup: on attend (loadingPhase)`
+      ]);
+      await handleNightOverlay(k);
+      return;
+    }
+
+    // Hors phase de chargement → vrai écran d'erreur
     await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
     showBanner(false);
     dbg([
-        `miroir: KO`,
-        `affiche: erreur`
+      `miroir: KO`,
+      `affiche: erreur`
     ]);
   }
 
