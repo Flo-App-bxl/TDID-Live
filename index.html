@@ -49,6 +49,19 @@
     50%,90%{opacity:.2;}
   }
 
+#decoOverlay {
+  position: fixed;
+  top: 64px; /* ne couvre pas la topbar */
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 64px);
+  z-index: 50; /* devant l’image live mais derrière la bannière */
+  pointer-events: none; /* clics passent à travers */
+  display: none;
+  object-fit: contain;
+  background: transparent;
+}
+
   /* Infobulle LED */
   .led-tooltip {
     position: absolute;
@@ -1268,6 +1281,26 @@ async function tick(){
   await handleNightOverlay(k);
 }
 
+async function loadDeco() {
+  const exts = ["png", "jpg", "jpeg", "gif", "webp"];
+  const decoImg = document.getElementById("decoOverlay");
+
+  for (const ext of exts) {
+    const url = `${GH_RAW}/deco.${ext}?t=${Date.now()}`;
+    try {
+      const r = await fetch(url, { method: "HEAD", cache: "no-store" });
+      if (r.ok) {
+        decoImg.src = url;
+        decoImg.style.display = "block";
+        return;
+      }
+    } catch (e) {}
+  }
+
+  // Si aucun "deco.*" trouvé
+  decoImg.style.display = "none";
+}
+
 
 /* ====== Annonce audio (optionnelle) ====== */
 const ANNONCE_URL = 'https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/gh-pages/Annonce.mp3';
@@ -1340,9 +1373,11 @@ function setupAnnonceAudio() {
 
 // On initialise après le chargement du DOM
 document.addEventListener('DOMContentLoaded', setupAnnonceAudio);
+loadDeco();
 /* Start */
 setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
 tick();
 </script>
+<img id="decoOverlay" />
 </body>
 </html>
