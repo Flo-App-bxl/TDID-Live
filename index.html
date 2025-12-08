@@ -1164,15 +1164,45 @@ async function tick(){
   }
   catch (e) {
 
-    const cached = lastMirror[k];
-    const cacheAge = cached ? (Date.now() - cached.time) : Infinity;
+   const cached = lastMirror[k];
+  const cacheAge = cached ? (Date.now() - cached.time) : Infinity;
 
-    if (cached && cacheAge <= CACHE_MIRROR_TTL) {
-        showBanner(false);
-        dbg([
-            `API/latest: KO`,
-            `affiche: cache ≤300s`
-        ]);
+  if (cached && cacheAge <= CACHE_MIRROR_TTL) {
+    await renderSlotImage(k, cached.url, { status:'warn', text:'Miroir cache (≤300s)' });
+    showBanner(false);
+    dbg([
+        `miroir: KO`,
+        `affiche cache ≤300s`
+    ]);
+  }
+  else if (cached && cacheAge <= MIRROR_ERR_10) {
+    showBanner(true);
+    dbg([
+        `miroir: KO`,
+        `cache >300s & <10min`,
+        `affiche dernière image valide`
+    ]);
+  }
+  else {
+
+    if (!canShowErrorScreen()) {
+      dbg([
+        `miroir: KO`,
+        `startup: on attend (loadingPhase)`
+      ]);
+      return;
+    }
+
+    await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
+    showBanner(false);
+    dbg([
+        `miroir: KO`,
+        `affiche: erreur`
+    ]);
+  }
+
+  await handleNightOverlay(k);
+}
         await handleNightOverlay(k);
         return;
     }
