@@ -1479,7 +1479,7 @@ async function loadDeco() {
   const decoImg = document.getElementById("decoOverlay");
 
   for (const ext of exts) {
-    const url = `${GH_RAW}/deco.${ext}?t=${Date.now()}`;
+    const url = `${GH_RAW}/Deco.${ext}?t=${Date.now()}`;
     try {
       const r = await fetch(url, { method: "HEAD", cache: "no-store" });
       if (r.ok) {
