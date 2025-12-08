@@ -815,6 +815,72 @@ async function fetchLatestFromSp(k){
   }
 }
 
+// Cache API GitHub pour latest.json
+const API_CACHE_TTL = 60 * 1000; // 1 minute
+
+let apiCache = {
+  brel:  null,
+  delta: null,
+  erasme: null,
+  expl:  null
+};
+
+
+
+async function fetchLatestViaApiOnly(k) {
+  const now = Date.now();
+
+  let path;
+  if (k === 'brel')      path = '/time_brel/latest.json';
+  else if (k === 'delta') path = '/time_delta/latest.json';
+  else if (k === 'erasme') path = '/time_erasme/latest.json';
+  else if (k === 'expl')   path = '/time_calcul/latest.json';
+  else throw new Error('unknown depot ' + k);
+
+  const apiUrl = `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`;
+  const trace = [];
+
+  try {
+    const r = await fetch(apiUrl, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/vnd.github.v3.raw' }
+    });
+    trace.push(`API:${r.status}`);
+    if (!r.ok) return null;
+
+    const j = await r.json();
+
+    apiCache[k] = {
+      json: j,
+      ts: Date.now(),
+      trace: trace.join(' ')
+    };
+
+    return j;
+  } catch (e) {
+    // On ne casse pas tout si l’API échoue
+    return null;
+  }
+}
+
+
+async function warmApiCacheCycle() {
+  // On ne spamme pas l’API pendant la nuit
+  if (isNightWindow()) return;
+
+  const keys = ['brel', 'delta', 'erasme', 'expl'];
+  for (const k of keys) {
+    // Si on a déjà un cache de moins de 60 s, on ne refait pas l’appel
+    const c = apiCache[k];
+    if (c && (Date.now() - c.ts) < API_CACHE_TTL) continue;
+
+    await fetchLatestViaApiOnly(k);
+  }
+}
+
+// Appel toutes les minutes
+setInterval(warmApiCacheCycle, 60 * 1000);
+
 /* latest.json GitHub */
 async function fetchLatest(k, forceApi = false) {
   const now   = Date.now();
@@ -834,9 +900,9 @@ async function fetchLatest(k, forceApi = false) {
   }
 
   const urls = [
-    { u: `${GH_RAW}${path}?x_bypass=${Math.floor(now / 60000)}`,        tag: 'RAW' },
-    { u: `${JSDELIVR}${path}?x_bypass=${Math.floor(now / 60000)}`,      tag: 'CDN' },
-    { u: `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`,                  tag: 'API' }
+    { u: `${GH_RAW}${path}?x_bypass=${Math.floor(now / 60000)}`,   tag: 'RAW' },
+    { u: `${JSDELIVR}${path}?x_bypass=${Math.floor(now / 60000)}`, tag: 'CDN' },
+    { u: `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`,             tag: 'API' }
   ];
 
   let trace  = [];
@@ -864,47 +930,61 @@ async function fetchLatest(k, forceApi = false) {
       j = await tryJson(urls[1].u, urls[1].tag); // CDN
     }
   } else {
-    // 🌞 JOUR : SP est KO, on applique :
-    // - au démarrage (aucun latest[k]) : API puis API (retry)
-    // - ensuite : RAW -> API -> CDN
+    // 🌞 JOUR : SP KO → ordre RAW > cache API > API > CDN
 
     const isStartup = !latest[k];
 
     if (isStartup) {
-      // DÉMARRAGE JOUR : 1er appel API, puis 2e appel API si KO
-      j = await tryJson(
-        urls[2].u,
-        urls[2].tag,
-        { headers: { 'Accept': 'application/vnd.github.v3.raw' } }
-      );
-
-      if (!j) {
-        j = await tryJson(
-          urls[2].u,
-          urls[2].tag,
-          { headers: { 'Accept': 'application/vnd.github.v3.raw' } }
-        );
+      // DÉMARRAGE JOUR : on force un passage API pour initialiser vite le cache
+      j = await fetchLatestViaApiOnly(k);
+      if (j) {
+        source = 'API';  // on considère que ça vient de l’API
       }
 
-      // Si toujours rien, on bascule sur le cycle normal (RAW -> API -> CDN)
+      // Si toujours rien → cycle normal
       if (!j) {
+        // RAW
         j = await tryJson(urls[0].u, urls[0].tag); // RAW
         if (!j) {
+          // cache API si déjà dispo
+          const c = apiCache[k];
+          if (c && (Date.now() - c.ts) < API_CACHE_TTL) {
+            j = c.json;
+            source = 'API-CACHE';
+            trace.push('API-CACHE:hit');
+          }
+        }
+        if (!j) {
+          // API live
           j = await tryJson(
             urls[2].u,
             urls[2].tag,
-            { headers: { 'Accept': 'application/vnd.github.v3.raw' } } // API
+            { headers: { 'Accept': 'application/vnd.github.v3.raw' } }
           );
         }
         if (!j) {
-          j = await tryJson(urls[1].u, urls[1].tag); // CDN (dernier recours)
+          // CDN (dernier recours)
+          j = await tryJson(urls[1].u, urls[1].tag);
         }
       }
 
     } else {
-      // CYCLE NORMAL JOUR : RAW -> API -> CDN
+      // CYCLE NORMAL JOUR : RAW -> cache API -> API -> CDN
+
+      // 1) RAW direct
       j = await tryJson(urls[0].u, urls[0].tag); // RAW
 
+      // 2) Cache API si RAW KO
+      if (!j) {
+        const c = apiCache[k];
+        if (c && (Date.now() - c.ts) < API_CACHE_TTL) {
+          j = c.json;
+          source = 'API-CACHE';
+          trace.push('API-CACHE:hit');
+        }
+      }
+
+      // 3) API live si toujours rien
       if (!j) {
         j = await tryJson(
           urls[2].u,
@@ -913,8 +993,9 @@ async function fetchLatest(k, forceApi = false) {
         );
       }
 
+      // 4) CDN en dernier recours
       if (!j) {
-        j = await tryJson(urls[1].u, urls[1].tag); // CDN (moins frais)
+        j = await tryJson(urls[1].u, urls[1].tag); // CDN
       }
     }
   }
@@ -1372,8 +1453,12 @@ function setupAnnonceAudio() {
 }
 
 // On initialise après le chargement du DOM
-document.addEventListener('DOMContentLoaded', setupAnnonceAudio);
-loadDeco();
+document.addEventListener('DOMContentLoaded', () => {
+  setupAnnonceAudio();
+  loadDeco();
+});
+
+
 /* Start */
 setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
 tick();
