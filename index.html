@@ -1243,6 +1243,12 @@ async function renderSlotImage(k, liveUrl, statusLabel) {
   return renderFrom(src, statusLabel);
 }
 
+function canShowErrorScreen() {
+  // On ne montre l’écran erreur QUE si on n’est plus dans la phase
+  // de chargement initial, ou si on a déjà montré une vraie image.
+  return !loadingPhase || firstImageShown;
+}
+
 /* Tick */
 async function tick(){
   const k=depot;
@@ -1351,15 +1357,25 @@ async function tick(){
         return;
     }
 
-    await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur API >10min' });
-    showBanner(false);
-    dbg([
-        `API/latest: KO`,
-        `cache >10min`,
-        `affiche: erreur`
-    ]);
-    await handleNightOverlay(k);
-    return;
+    if (!canShowErrorScreen()) {
+  dbg([
+    `API/latest: KO`,
+    `cache >10min`,
+    `startup: on attend (loadingPhase)`
+  ]);
+  await handleNightOverlay(k);
+  return;
+}
+
+await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur API >10min' });
+showBanner(false);
+dbg([
+    `API/latest: KO`,
+    `cache >10min`,
+    `affiche: erreur`
+]);
+await handleNightOverlay(k);
+return;
   }
 
   const ageMs = Date.now() - L.ts;
@@ -1367,20 +1383,33 @@ async function tick(){
   const apiAgeSec = Math.round((Date.now() - lastFetchAt[k]) / 1000);
 
   if (ageMs > MIRROR_ERR_10) {
-    await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
-    showBanner(false);
 
+  if (!canShowErrorScreen()) {
     dbg([
-        `latest: ${lastSource[k]}`,
-        `trace: ${lastHttp[k]}`,
-        `Δ=${ageSec}s`,
-        `APIΔ=${apiAgeSec}s`,
-        `affiche: erreur`
+      `latest: ${lastSource[k]}`,
+      `trace: ${lastHttp[k]}`,
+      `Δ=${ageSec}s`,
+      `APIΔ=${apiAgeSec}s`,
+      `startup: miroir >10min, on attend (loadingPhase)`
     ]);
-
     await handleNightOverlay(k);
     return;
   }
+
+  await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
+  showBanner(false);
+
+  dbg([
+      `latest: ${lastSource[k]}`,
+      `trace: ${lastHttp[k]}`,
+      `Δ=${ageSec}s`,
+      `APIΔ=${apiAgeSec}s`,
+      `affiche: erreur`
+  ]);
+
+  await handleNightOverlay(k);
+  return;
+}
 
   const okMir = await renderSlotImage(k, L.url, { status:'warn', text:'Miroir' });
 
@@ -1404,13 +1433,23 @@ async function tick(){
   const cacheAge = cached ? (Date.now() - cached.time) : Infinity;
 
   if (cached && cacheAge <= CACHE_MIRROR_TTL) {
-    await renderSlotImage(k, cached.url, { status:'warn', text:'Miroir cache (≤300s)' });
-    showBanner(false);
+    else {
+
+  if (!canShowErrorScreen()) {
     dbg([
-        `miroir: KO`,
-        `affiche cache ≤300s`
+      `miroir: KO`,
+      `startup: on attend (loadingPhase)`
     ]);
+    return;
   }
+
+  await renderFrom(ERR_IMG, { status: 'err', text: 'Erreur (miroir >10min)' });
+  showBanner(false);
+  dbg([
+      `miroir: KO`,
+      `affiche: erreur`
+  ]);
+}
   else if (cached && cacheAge <= MIRROR_ERR_10) {
     showBanner(true);
     dbg([
