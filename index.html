@@ -451,6 +451,12 @@ const DATA_SP_JSON = {
   expl:   { json: spJson("time_calcul_latest.json") }
 };
 
+const LOADING_MAX_MS = 60 * 1000; // 1 minute max pour le chargement initial
+
+let appStartTime = Date.now();
+let loadingPhase  = true;   // on démarre en mode "chargement en cours"
+let firstImageShown = false;
+
 /* UI refs */
 const img=document.getElementById('view'), note=document.getElementById('note'),
       led=document.getElementById('led'), stamp=document.getElementById('stamp'),
@@ -461,6 +467,11 @@ const img=document.getElementById('view'), note=document.getElementById('note'),
       nightOverlay=document.getElementById('nightOverlay'),
       nightLine1=document.getElementById('nightLine1'),
       nightLine2=document.getElementById('nightLine2');
+const BANNER_HTML_REFRESH = banner.innerHTML;  // texte normal (>5 min)
+const BANNER_HTML_LOADING = `
+  <span>CHARGEMENT EN COURS</span>
+  <span>BEZIG MET LADEN</span>
+`;
 
 const ledIcon = document.createElement('span');
 led.appendChild(ledIcon);
@@ -727,12 +738,26 @@ function renderFrom(src,statusLabel){
     t.onload=()=>{
       img.src=t.src;
       setTop(statusLabel.status,statusLabel.text);
+
+      // Si on est encore en phase de chargement et que ce n'est
+      // ni un écran "Night" ni une "Erreur", on considère que
+      // c'est la première vraie image réussie.
+      const labelText = statusLabel && statusLabel.text ? String(statusLabel.text) : '';
+      const isError   = labelText.startsWith('Erreur');
+      const isNight   = (labelText === 'Night');
+
+      if (loadingPhase && !isError && !isNight) {
+        firstImageShown = true;
+        stopLoadingUI();
+      }
+
       res(true);
     };
     t.onerror=()=>res(false);
     t.src=src+(src.includes('?')?'&':'?')+'t='+Date.now();
   });
 }
+
 function dbg(parts){
   const base = parts.filter(Boolean).join(' | ');
   const prefix = currentStatusLabel ? `[${currentStatusLabel}] ` : '';
@@ -1057,9 +1082,37 @@ async function fetchLatest(k, forceApi = false) {
   return latest[k];
 }
 
+function startLoadingUI() {
+  appStartTime    = Date.now();
+  loadingPhase    = true;
+  firstImageShown = false;
+
+  // texte "chargement en cours"
+  banner.innerHTML = BANNER_HTML_LOADING;
+  banner.style.display = 'block';
+
+  // logo en fond au démarrage
+  img.src = "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/assets/intro_poster.jpg";
+}
+
+function stopLoadingUI() {
+  if (!loadingPhase) return;
+  loadingPhase = false;
+  // on remet le texte normal pour les futurs cas REFRESH>5min
+  banner.innerHTML = BANNER_HTML_REFRESH;
+  if (!forceBanner) {
+    banner.style.display = 'none';
+  }
+}
+
 function showBanner(show){
   if (forceBanner) {
     banner.style.display = 'block';
+    return;
+  }
+  // Tant qu'on est en phase de chargement initial,
+  // c'est startLoadingUI/stopLoadingUI qui contrôlent le bandeau
+  if (loadingPhase) {
     return;
   }
   banner.style.display = show ? 'block' : 'none';
@@ -1194,7 +1247,23 @@ async function renderSlotImage(k, liveUrl, statusLabel) {
 async function tick(){
   const k=depot;
   const inNight = isNightActive();
-
+  // Timeout de chargement initial : 1 minute sans image valide
+  if (loadingPhase && !firstImageShown) {
+    const elapsed = Date.now() - appStartTime;
+    if (elapsed > LOADING_MAX_MS) {
+      loadingPhase = false;
+      banner.innerHTML = BANNER_HTML_REFRESH;
+      if (!forceBanner) {
+        banner.style.display = 'none';
+      }
+      await renderFrom(ERR_IMG, { status:'err', text:'Erreur chargement' });
+      dbg([
+        'startup: timeout >60s',
+        'affiche: écran erreur'
+      ]);
+      return;
+    }
+  }
   const override = overrideActive();
   const preferSPThisTick = preferSPNext; preferSPNext=false;
 
@@ -1457,7 +1526,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupAnnonceAudio();
   loadDeco();
 });
-
+startLoadingUI();
 
 /* Start */
 setInterval(()=>{ updateBtn(); updateRotateHint(); tick(); }, REFRESH_MS);
