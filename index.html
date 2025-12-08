@@ -803,12 +803,9 @@ async function fetchLatestFromSp(k){
 }
 
 /* latest.json GitHub */
-async function fetchLatest(k,forceApi=false){
-  const now=Date.now();
-  const night=isNightWindow();
-  const allowApi = forceApi && !night;
-
-  if((!forceApi || night) && !forceFetch && now-lastFetchAt[k]<FETCH_MIN && latest[k]) return latest[k];
+async function fetchLatest(k, forceApi = false) {
+  const now   = Date.now();
+  const night = isNightWindow(); // nuit = pas d’API
 
   let path;
   if (k === 'brel') {
@@ -822,34 +819,98 @@ async function fetchLatest(k,forceApi=false){
   } else {
     throw new Error('unknown depot ' + k);
   }
-  const urls = [
-    {u:`${GH_RAW}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'RAW'},
-    {u:`${JSDELIVR}${path}?x_bypass=${Math.floor(now/60000)}`, tag:'CDN'},
-    {u:`${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`, tag: allowApi ? 'API*' : 'API'}
-  ];
-  let trace=[], source='-';
-  async function tryJson(u,tag,init){
-    try{
-      const r=await fetch(u,{cache:'no-store',...init}); trace.push(`${tag}:${r.status}`);
-      if(!r.ok) return null; source=tag; return await r.json();
-    }catch{ trace.push(`${tag}:fail`); return null; }
-  }
 
-  let j=null;
-  if(allowApi){
-    j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
-    if(!j) j = await tryJson(urls[0].u, urls[0].tag);
-    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
-  }else{
-    j = await tryJson(urls[0].u, urls[0].tag);
-    if(!j) j = await tryJson(urls[1].u, urls[1].tag);
-    if(!j && !night){
-      j = await tryJson(urls[2].u, urls[2].tag, {headers:{'Accept':'application/vnd.github.v3.raw'}});
+  const urls = [
+    { u: `${GH_RAW}${path}?x_bypass=${Math.floor(now / 60000)}`,        tag: 'RAW' },
+    { u: `${JSDELIVR}${path}?x_bypass=${Math.floor(now / 60000)}`,      tag: 'CDN' },
+    { u: `${GH_API}${path}?ref=${GH_BRANCH}&_=${now}`,                  tag: 'API' }
+  ];
+
+  let trace  = [];
+  let source = '-';
+
+  async function tryJson(u, tag, init) {
+    try {
+      const r = await fetch(u, { cache: 'no-store', ...init });
+      trace.push(`${tag}:${r.status}`);
+      if (!r.ok) return null;
+      source = tag;
+      return await r.json();
+    } catch {
+      trace.push(`${tag}:fail`);
+      return null;
     }
   }
 
-  lastFetchAt[k]=now; lastHttp[k]=trace.join(' '); lastSource[k]=source;
-  if(!j) throw new Error('fetch failed');
+  let j = null;
+
+  if (night) {
+    // 🌙 MODE NUIT : RAW -> CDN, jamais d’API
+    j = await tryJson(urls[0].u, urls[0].tag); // RAW
+    if (!j) {
+      j = await tryJson(urls[1].u, urls[1].tag); // CDN
+    }
+  } else {
+    // 🌞 JOUR : SP est KO, on applique :
+    // - au démarrage (aucun latest[k]) : API puis API (retry)
+    // - ensuite : RAW -> API -> CDN
+
+    const isStartup = !latest[k];
+
+    if (isStartup) {
+      // DÉMARRAGE JOUR : 1er appel API, puis 2e appel API si KO
+      j = await tryJson(
+        urls[2].u,
+        urls[2].tag,
+        { headers: { 'Accept': 'application/vnd.github.v3.raw' } }
+      );
+
+      if (!j) {
+        j = await tryJson(
+          urls[2].u,
+          urls[2].tag,
+          { headers: { 'Accept': 'application/vnd.github.v3.raw' } }
+        );
+      }
+
+      // Si toujours rien, on bascule sur le cycle normal (RAW -> API -> CDN)
+      if (!j) {
+        j = await tryJson(urls[0].u, urls[0].tag); // RAW
+        if (!j) {
+          j = await tryJson(
+            urls[2].u,
+            urls[2].tag,
+            { headers: { 'Accept': 'application/vnd.github.v3.raw' } } // API
+          );
+        }
+        if (!j) {
+          j = await tryJson(urls[1].u, urls[1].tag); // CDN (dernier recours)
+        }
+      }
+
+    } else {
+      // CYCLE NORMAL JOUR : RAW -> API -> CDN
+      j = await tryJson(urls[0].u, urls[0].tag); // RAW
+
+      if (!j) {
+        j = await tryJson(
+          urls[2].u,
+          urls[2].tag,
+          { headers: { 'Accept': 'application/vnd.github.v3.raw' } } // API
+        );
+      }
+
+      if (!j) {
+        j = await tryJson(urls[1].u, urls[1].tag); // CDN (moins frais)
+      }
+    }
+  }
+
+  lastFetchAt[k] = now;
+  lastHttp[k]    = trace.join(' ');
+  lastSource[k]  = source;
+
+  if (!j) throw new Error('fetch failed');
 
   const key = JSON_KEY[k] || k;
   const it  = j?.items?.[key];
@@ -857,9 +918,9 @@ async function fetchLatest(k,forceApi=false){
 
   const tsMs = Number(it.ts) * 1000;
   let imgUrl = it.url;
-  if(!imgUrl){
-    const f=(it.file||'').split('/').pop();
-    if(!f) throw new Error('no file');
+  if (!imgUrl) {
+    const f = (it.file || '').split('/').pop();
+    if (!f) throw new Error('no file');
     imgUrl = `${GH_RAW}/${MIRROR_DIR[k]}/${f}`;
   }
 
@@ -893,12 +954,12 @@ async function fetchLatest(k,forceApi=false){
   latestInfos[k] = { local: infoLocal, com: infoCOM };
 
   const prev = latest[k];
-  if(prev && tsMs < prev.ts){
+  if (prev && tsMs < prev.ts) {
     return prev;
   }
 
   latest[k] = { ts: tsMs, url: imgUrl };
-  forceFetch=false;
+  forceFetch = false;
   return latest[k];
 }
 
