@@ -1,0 +1,16 @@
+{
+    "updated_iso":  "2026-01-03T23:40:37.9452833Z",
+    "epoch_s":  1767483637,
+    "items":  {
+                  "calcul":  {
+                                 "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/mirror_calcul/calcul_3.png",
+                                 "file":  "mirror_calcul/calcul_3.png",
+                                 "ts":  1767483637
+                             },
+                  "info_COM":  {
+                                   "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/info/info_com_6.png",
+                                   "file":  "info/info_com_6.png",
+                                   "ts":  1767483637
+                               }
+              }
+}
