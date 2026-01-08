@@ -1,0 +1,16 @@
+{
+    "updated_iso":  "2026-01-08T18:20:40.6612948Z",
+    "epoch_s":  1767896440,
+    "items":  {
+                  "erasme":  {
+                                 "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/mirror_erasme/live_erasme_7.png",
+                                 "file":  "mirror_erasme/live_erasme_7.png",
+                                 "ts":  1767896440
+                             },
+                  "info_COM":  {
+                                   "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/info/info_com_1.png",
+                                   "file":  "info/info_com_1.png",
+                                   "ts":  1767896440
+                               }
+              }
+}
