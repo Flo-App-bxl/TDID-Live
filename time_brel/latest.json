@@ -1,0 +1,16 @@
+{
+    "updated_iso":  "2026-02-03T11:16:37.9749392Z",
+    "epoch_s":  1770117397,
+    "items":  {
+                  "brel":  {
+                               "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/mirror_brel/live_brel_14.png",
+                               "file":  "mirror_brel/live_brel_14.png",
+                               "ts":  1770117397
+                           },
+                  "info_COM":  {
+                                   "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/info/info_com_15.png",
+                                   "file":  "info/info_com_15.png",
+                                   "ts":  1770117397
+                               }
+              }
+}
