@@ -1,0 +1,16 @@
+{
+    "updated_iso":  "2026-02-03T16:28:50.6169077Z",
+    "epoch_s":  1770136130,
+    "items":  {
+                  "delta":  {
+                                "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/mirror_delta/live_delta_5.png",
+                                "file":  "mirror_delta/live_delta_5.png",
+                                "ts":  1770136130
+                            },
+                  "info_COM":  {
+                                   "url":  "https://raw.githubusercontent.com/Flo-App-bxl/TDID-Live/main/info/info_com_12.png",
+                                   "file":  "info/info_com_12.png",
+                                   "ts":  1770136130
+                               }
+              }
+}
